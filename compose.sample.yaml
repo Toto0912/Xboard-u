@@ -3,14 +3,10 @@
 # proxies (nginx, Caddy on host, Cloudflare Tunnel, etc.) that talk to
 # 127.0.0.1:7001 on the host.
 #
-# For 1Panel users: use compose.1panel.sample.yaml so the container can reach
-# the 1Panel-managed MySQL/Redis on the 1panel-network.
-#
-# For aaPanel native (openresty on host) users that prefer host networking:
-# use compose.host.sample.yaml.
+# For aaPanel + MySQL on the host, use compose.host.sample.yaml.
 services:
   xboard:
-    image: ghcr.io/toto0912/xboard-u:v0.1.0
+    image: ghcr.io/toto0912/xboard-u:latest
     restart: unless-stopped
     ports:
       - "7001:7001"

@@ -1,104 +1,108 @@
-# aaPanel + Docker + MySQL：保留数据升级
+# 使用 aaPanel + Docker 部署 xboard-u
 
-适用于官方推荐的 aaPanel 原生 Nginx、宿主机 MySQL、Docker 面板部署。官方模板使用 `network_mode: host`，因此面板可以通过 `127.0.0.1:3306` 访问宿主机 MySQL，Nginx 继续反代到 `127.0.0.1:7001`。
+适合 aaPanel 管理 Nginx 和 MySQL、Docker 运行面板的全新安装。流程参考[原项目部署指南](https://github.com/cedar2025/Xboard/blob/master/docs/en/installation/aapanel-docker.md)，面板仓库及镜像改为 xboard-u。
 
-本指南只替换面板镜像。**升级不需要重装面板、重建数据库，也不需要把用于测试的旧 SQL 备份导回生产库。**
+已有 Xboard 面板请阅读[迁移指南](UPGRADE-XBOARD-U.md)，不要对已有数据库执行安装命令。
 
-## 已验证的范围
+## 环境要求
 
-2026-11-01，使用一份 MySQL 5.7.44 导出的真实数据备份进行本地演练：
+- Linux 服务器，建议至少 1 核 CPU、2 GB 内存及 10 GB 可用空间。
+- aaPanel、Git、Docker 和 Docker Compose v2。
+- 在 aaPanel 中安装 Nginx、MySQL 5.7 或更新版本。
+- 宿主机无需另装 PHP 和 Redis；Docker 镜像已包含所需运行环境。
 
-- 全量导入 33 张表，分别比较每张表的所有行、表结构及自增状态。
-- 验证官方镜像启动 → xboard-u → 重复更新 → 重启 → 回退官方镜像 → 再次升级。
-- 暂停本地业务调度后，所有阶段的数据库内容、结构、测试 `.env`、APP_KEY 及挂载文件校验一致。
-- 原备份的密码哈希、UUID、订阅 Token、节点/机器配置、证书、余额、订单、套餐、主题设置及插件记录都在全表比对范围内。
-- 单独的功能副本通过 Nginx 验证合成账号登录、节点列表、TLS 内容保存/重新打开、机器命令和节点鉴权。
-- 正式版 xboard-node-u v1.0.2 通过 Nginx 完成 WebSocket 机器鉴权和状态上报，并使用面板下发的临时证书完成 HY2 代理及客户端证书验证。
+## 1. 准备运行环境
 
-本地模拟了 Linux host 网络的 localhost 语义及相同反向代理链路，没有安装 aaPanel 管理界面，也没有连接任何 VPS。所有数据库副本都处于无外网出口的隔离网络中。
+没有 aaPanel 时，先按 [aaPanel 官方说明](https://www.aapanel.com/new/download.html)安装。已有 aaPanel 可跳过。
 
-## 1. 准备新镜像，保留旧镜像
+如尚未安装 Docker，沿用原项目的安装命令：
 
-从 GitHub Container Registry 拉取固定版本镜像，不要覆盖原网站目录中的配置和数据：
-
-```sh
-docker pull ghcr.io/toto0912/xboard-u:v0.1.0
+```bash
+curl -sSL https://get.docker.com | bash
 ```
 
-在 aaPanel 中确认原面板容器名、编排目录、服务名和项目名。不要新建另一个编排来替代原编排；项目名改变会改变默认命名卷名称。
+安装后确认 Docker 已运行，并在 aaPanel 中安装 Nginx 和 MySQL。
 
-以下命令的容器名需要换成 aaPanel 中的原容器名；后续示例假定服务名为 `xboard`：
+## 2. 创建网站和数据库
 
-```sh
-PANEL_CONTAINER="原面板容器名"
-PROJECT_NAME="$(docker inspect "$PANEL_CONTAINER" --format '{{index .Config.Labels "com.docker.compose.project"}}')"
-OLD_IMAGE="$(docker inspect "$PANEL_CONTAINER" --format '{{.Image}}')"
-test -n "$PROJECT_NAME" && test -n "$OLD_IMAGE"
-docker image tag "$OLD_IMAGE" xboard-before-u:backup
+在 aaPanel 的“网站 → 添加站点”中：
+
+1. 填写面板域名。
+2. 数据库选择 MySQL，创建一个空数据库，并记下数据库名、用户名和密码。
+3. PHP 版本选择“纯静态”。
+
+## 3. 下载并初始化面板
+
+进入新网站目录，将 `your-domain` 换成实际网站目录名：
+
+```bash
+cd /www/wwwroot/your-domain
 ```
 
-保留旧镜像，不要在升级验收前清理它。后续命令应在**原编排目录**执行；沿用原有的 `-f` 文件和 `--env-file` 参数，文件名、服务名不同则按实际替换。
+仅在**新建的空站点**中删除 aaPanel 自动生成的默认页面。已有网站的文件、数据库和 `.env` 不要清理：
 
-## 2. 停写并备份
-
-停止原面板容器，以同时停止其 Web、Octane 内置调度、队列和 WS 进程。只关闭 Horizon 队列并不能停止 Octane 的内置调度。如有额外 aaPanel 计划任务或其他写数据库的进程，也应一起暂停。
-
-```sh
-docker compose -p "$PROJECT_NAME" -f compose.yaml stop xboard
+```bash
+# 存在 .user.ini 时先解除它的只读属性
+if [ -f .user.ini ]; then chattr -i .user.ini; fi
+rm -f .htaccess 404.html 502.html index.html .user.ini
 ```
 
-宿主机 MySQL 无需停止。在 aaPanel 数据库管理中为**当前生产库**创建完整备份，并确认备份可恢复；保留必要的触发器、事件和存储过程定义。另行备份原 `.env`、编排文件、`storage/theme`、`plugins`、自定义配置、上传文件等，放在独立的备份目录。
+按原版流程克隆仓库、准备 host 网络编排，然后初始化：
 
-保留原 APP_KEY、数据库连接、MySQL 字符集和现有授权。不要用 `.env.example` 覆盖 `.env`，不要执行 `xboard:install`、`key:generate`、`migrate:fresh` 或 `docker compose down -v`。
-
-## 3. 只替换原编排中的面板镜像
-
-在原编排目录下载正式发布的升级覆盖文件（若已有同名覆盖文件，先备份；不要覆盖原 `compose.yaml`）：
-
-```sh
-curl -fL https://github.com/Toto0912/Xboard-u/releases/download/v0.1.0/compose.xboard-u.yaml -o compose.xboard-u.yaml
+```bash
+git clone -b main --depth 1 https://github.com/Toto0912/Xboard-u.git ./
+cp compose.host.sample.yaml compose.yaml
+touch .env
+docker compose run -it --rm xboard php artisan xboard:install
 ```
 
-文件内容如下，也可手动创建：
+交互界面选择 MySQL，填写刚创建的空数据库信息；aaPanel 的 MySQL 运行在宿主机时，通常填写 `127.0.0.1` 和 `3306`。Redis 选择容器内置 Redis。
 
-```yaml
-services:
-  xboard:
-    image: ghcr.io/toto0912/xboard-u:v0.1.0
+> 请保存安装时显示的管理后台地址、管理员邮箱和密码。
+>
+> xboard-u 使用 `main` 分支，因此比原项目的 `compose` 分支多了创建空 `.env` 的步骤。应用代码和管理前端来自镜像，不需要在宿主机安装依赖或初始化前端子模块。
+
+## 4. 启动面板
+
+```bash
+docker compose up -d
 ```
 
-覆盖文件只包含镜像，不写网络、端口、数据库服务或挂载。原 `network_mode: host`、`.env`、外置 MySQL、Redis 命名卷和其他挂载继续沿用。
+## 5. 配置 Nginx 反向代理
 
-```sh
-docker compose -p "$PROJECT_NAME" -f compose.yaml -f compose.xboard-u.yaml config --images
-docker compose -p "$PROJECT_NAME" -f compose.yaml -f compose.xboard-u.yaml up -d --no-deps xboard
-docker compose -p "$PROJECT_NAME" -f compose.yaml -f compose.xboard-u.yaml logs --tail=100 xboard
+在 aaPanel 的网站配置中将根路径转发到 `http://127.0.0.1:7001`，替换原有的根路径 `location`，不要重复添加。配置示例：
+
+```nginx
+location ^~ / {
+    proxy_pass http://127.0.0.1:7001;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $http_connection;
+    proxy_read_timeout 60s;
+    proxy_buffering off;
+    proxy_cache off;
+}
 ```
 
-也可以在 aaPanel 原编排中修改同一服务的镜像并重建该服务。Nginx、SSL、Cloudflare、MySQL 地址、数据库名和用户均不需要因本轮升级而改变。
+保存并重新加载 Nginx，为域名配置 HTTPS，然后通过域名访问面板。容器内置 Caddy 统一处理 7001 端口上的网页及 WebSocket，不需要另加 `/ws/` 代理或单独暴露 8076 端口。
 
-启动入口会执行原有 `xboard:update`。本轮没有新增或修改数据库迁移；对本次验证的数据库，更新检查没有改变原有表结构和记录。
+## 更新与日常管理
 
-## 4. 验收
+先备份数据库、`.env`、主题及插件，再进入原网站目录更新。命令与原版一致：
 
-- 使用原账号检查登录、余额、套餐、订单和原订阅链接。
-- 检查节点/机器列表、状态上报和 WebSocket 通信。
-- 检查原主题、插件文件和配置。
-- 验证 TLS 内容推送：内外两层保存后重新打开，确认模式及证书内容保留。
-
-月初流量重置、到期处理等继续按原规则运行。导入较旧备份后发生符合套餐规则的流量重置属于正常业务，不能单凭流量计数变化判断升级丢失数据。本次静态数据比对仅在本地 Redis 暂时持有调度锁；没有修改生产调度或流量重置逻辑，也不建议在生产长期阻止调度。
-
-## 5. 回退
-
-若需回退，先停止新面板，再将 `compose.xboard-u.yaml` 中的镜像改成已保留的 `xboard-before-u:backup`，以相同项目名和相同挂载启动。
-
-```sh
-docker compose -p "$PROJECT_NAME" -f compose.yaml -f compose.xboard-u.yaml stop xboard
-docker compose -p "$PROJECT_NAME" -f compose.yaml -f compose.xboard-u.yaml up -d --no-deps xboard
+```bash
+docker compose pull && docker compose up -d
 ```
 
-本轮相同数据库结构下，已验证仅切换回旧镜像可恢复运行，不需要恢复数据库。若跨越其他上游迁移或发生了需要撤销的数据写入，应停写后配套恢复数据库及文件。不要在新旧版本同时写库时恢复备份，也不要用本次测试用的历史备份覆盖升级后的新订单和用户数据。
+容器启动时会执行 `php artisan xboard:update`，无需再次运行安装命令。
 
-## SQL 备份无法覆盖的部分
+```bash
+docker compose logs --tail=100 -f  # 查看日志
+docker compose restart           # 重启面板
+docker compose stop              # 停止面板
+```
 
-数据库导出不包含生产 `.env`/APP_KEY、主题包、用户插件代码、上传文件及 aaPanel/Nginx/SSL 配置。本地使用测试 `.env` 和已有本地主题资源验证挂载保留；生产必须保留实际文件。本次没有进行真实支付、邮件发送、生产管理员密码登录或公网压力测试。
+编排默认使用 `ghcr.io/toto0912/xboard-u:latest`，只跟随正式发布版本。持久化配置和数据继续保存在原目录及原 Redis 卷中，更新时不要删除它们。

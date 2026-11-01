@@ -1,87 +1,82 @@
-# 从 Xboard 原版升级到 xboard-u
+# 从原版 Xboard 迁移到 xboard-u
 
-## 兼容范围
+适用于已经使用 Docker / aaPanel + Docker 部署的 Xboard。迁移只替换面板镜像，继续使用原数据库、`.env`、APP_KEY、主题、插件和节点配置，无需重新绑定机器。
 
-xboard-u 基于 `cedar2025/Xboard` 的 `e68fec50ef48d86f7666c5ff5e758f2a6e9fa313`（2026-10-29）。本轮不增加或修改数据库迁移，不改变表名、APP_KEY、密码哈希、用户 UUID、订阅 Token、节点 ID、机器 Token、节点通信接口或主题目录。
+xboard-u v0.1.0 基于原版 `e68fec5`（2026-10-29），没有新增或修改数据库迁移。更早的历史版本或第三方修改，应先确认相应上游迁移及插件兼容情况。
 
-当前原版面板可沿用已有数据库和持久化文件切换代码/镜像，不需要重新安装面板或重新绑定机器。旧版本如尚未完成上游数据库迁移，应先在数据副本上验证相应上游升级；不能保证任意历史版本、第三方分支或自改插件都可直接切换。
+## 1. 停止面板并备份
 
-原版空配置可以是 `[]`、`{}` 或 NULL。修复只在管理接口输出时把空 `cert_config` 统一为对象；不会批量改库。已经丢失的证书无法凭空恢复，升级后需重新填入一次。已有非空证书配置及未知扩展字段原样保留。
+进入**原面板编排目录**。下面以 `compose.yaml`、服务名 `xboard` 为例；名称不同请替换，原来使用的项目名（`-p`）、覆盖文件（`-f`）和环境文件参数继续保留。
 
-## Docker：复用原部署和数据
-
-**aaPanel + Docker + 外置 MySQL** 已使用 MySQL 5.7.44 真实备份完成本地升级/回退验证，请优先阅读 [aaPanel + MySQL 升级指南](AAPANEL-MYSQL-UPGRADE.md)。生产只替换镜像并复用当前库，不需要导入测试备份。
-
-以下命令用于升级已有安装；**不要运行 `xboard:install`、`key:generate`、`migrate:fresh` 或 `docker compose down -v`**。
-
-### 1. 拉取固定版本镜像
-
-从 GitHub 拉取发布镜像，无需在服务器构建：
-
-```sh
-docker pull ghcr.io/toto0912/xboard-u:v0.1.0
+```bash
+docker compose stop
+cp -p compose.yaml compose.yaml.before-xboard-u
 ```
 
-此镜像使用当前检出的代码，不会在构建时下载另一份官方源码。`composer.lock` 参与构建。管理前端继续使用固定版本的官方子模块，不需要修改或重编译其压缩脚本。
+如果还有单独的队列、计划任务或 WebSocket 服务会写入同一个数据库，也一并停止。
 
-镜像支持 Linux amd64 / arm64。源码构建方式见 [README](../README.md#从源码构建)，节点端继续使用 xboard-node-u 的独立 Release。
+备份以下内容，放在独立的备份目录：
 
-### 2. 停写并备份
+- 当前数据库。MySQL 可使用 aaPanel 的数据库备份功能；SQLite 在停止全部写入后备份完整数据目录，包含存在的 WAL/SHM 文件。
+- `.env`、自定义配置、`storage/theme`、`plugins`、上传文件和其他自定义挂载。
+- 原编排文件、项目名以及实际使用的命名卷信息；保留旧镜像，便于回退。
 
-回到**原面板部署目录**，保留原 Compose 文件、项目名和全部挂载。先记录旧镜像的镜像 ID/摘要并保留，不要清理旧镜像。停止面板及所有写数据库的队列、计划任务和 WebSocket 服务；拆分部署要同时停止全部写入者。
+不要清空 `.env`、更换 APP_KEY、重建数据库或执行 `xboard:install`，也不要运行 `docker compose down -v`。
 
-备份必须放在源码和数据库目录以外，包含：
+## 2. 只修改镜像地址
 
-- `.env`（尤其 APP_KEY 和数据库连接）、自定义 `config/v2board.php` / 其他密钥文件。
-- 完整数据库：SQLite 要在停写后用 SQLite `.backup`，或完整备份所在数据目录（含存在的 WAL/SHM），不能只复制一个正在写入的数据库文件。默认数据目录是 `.docker/.data`，自定义路径以现有配置为准。
-- MySQL/MariaDB 使用一致性数据库备份，保留字符集、触发器等；外置数据库无需更换连接地址。
-- `storage/theme`、`plugins`、已有上传文件和其他自定义挂载目录。
-- 原 Compose 文件、覆盖文件、环境文件及实际命名卷信息；使用的 Redis 命名卷继续复用。
-
-不要用新源码中的 `.env.example` 替换旧 `.env`。不要更改原 Compose 项目名、端口、网络、数据库或 Redis 卷名。
-
-### 3. 只覆盖面板镜像
-
-在原部署目录下载升级覆盖文件（如已有同名文件，先备份）：
-
-```sh
-curl -fL https://github.com/Toto0912/Xboard-u/releases/download/v0.1.0/compose.xboard-u.yaml -o compose.xboard-u.yaml
-```
-
-内容如下；它只覆盖镜像，不能单独作为完整编排启动：
+在原 `compose.yaml` 中找到面板服务，将原镜像替换为：
 
 ```yaml
 services:
   xboard:
-    image: ghcr.io/toto0912/xboard-u:v0.1.0
+    image: ghcr.io/toto0912/xboard-u:latest
 ```
 
-以下假定原文件名为 `compose.yaml`、服务名为 `xboard`。若你的名字不同，替换为原有名字；如果原来还有其他 `-f`、`--env-file` 或 `-p` 参数，继续保留。
+以上仅展示需要修改的位置，**不要用这几行替换整个编排文件**。保留原网络、端口、环境变量、数据库连接、所有挂载和卷名，特别是 aaPanel 模式的 `network_mode: host`。
 
-```sh
-docker compose -f compose.yaml -f compose.xboard-u.yaml config
-docker compose -f compose.yaml -f compose.xboard-u.yaml up -d --no-deps xboard
-docker compose -f compose.yaml -f compose.xboard-u.yaml logs --tail=100 xboard
+如果原来通过覆盖文件设置镜像，修改实际生效的那一处；拆分部署则同时替换 `web`、`horizon`、`ws-server` 中的面板镜像，其他服务不变。
+
+无需克隆新仓库覆盖原站点，也无需重新导入数据库。
+
+## 3. 拉取镜像并启动
+
+沿用原版更新命令，在同一个目录、同一个 Compose 项目中执行：
+
+```bash
+docker compose pull && docker compose up -d
 ```
 
-`config` 用来确认合并后的挂载、网络和端口与原部署一致，其输出可能含环境变量，应仅在本机查看。拆分模式需要同时覆盖 `web`、`horizon`、`ws-server` 的面板镜像，其他服务继续沿用原配置。
+镜像启动时会执行原版的 `php artisan xboard:update`。本版本没有额外数据库迁移；原数据和配置继续使用，切换期间有短暂服务中断。
 
-入口程序沿用上游的 `xboard:update` 流程，检查迁移、插件和主题；当前已是对应上游数据库结构时，不产生新的表结构变更。升级时存在短暂服务中断，“无损”指数据及配置保留，不代表零停机。
+## 4. 检查迁移结果
 
-### 4. 验收和回退
+```bash
+docker compose logs --tail=100
+```
 
-检查旧账号登录、套餐/订单/余额、原订阅链接、机器状态、节点流量上报和当前主题。打开此前为空的 TLS 高级设置，填入内容推送证书并完成内外两层保存，重新打开确认内容仍在。
+使用原账号检查套餐、余额、订单、订阅链接、机器状态和当前主题。升级后刷新管理页面，重新填写此前已丢失的 TLS 内容推送配置，并完成内外两层保存；已有正确证书配置无需修改。
 
-发现异常时停止新服务，把覆盖文件的镜像改为之前记录的旧镜像，再用原项目名及原挂载启动。当前分支未改数据库结构，通常可直接切回；如升级跨越了上游迁移，必须在全部写入者停止后配套恢复备份数据库和文件，不能在新旧版本同时写库时回退。
-
-## 源码部署
-
-在独立目录准备并验证新代码：初始化固定的管理前端子模块，使用 `composer install --no-dev --prefer-dist --optimize-autoloader`，不要 `composer update` 或删除锁文件。
-
-停写、备份后沿用原 `.env`、APP_KEY、数据库、`storage/theme`、`plugins`、数据目录及自定义配置，并保持 PHP 用户的读写权限。清除新运行目录中的过期配置/路由缓存，执行 `php artisan xboard:update`，再把网站根目录/服务工作目录切换到新代码，重启原有 Web、队列和 WS 服务。切换前需在副本验证 Octane、Supervisor/OpenRC 等进程配置；不要复制旧代码的 `bootstrap/cache`、`vendor` 或临时 PID 文件到新运行目录。
+月初流量重置等任务仍按原规则运行。
 
 ## 后续更新
 
-原版 `update.sh` 和内置代码更新逻辑会拉取/重置原仓库，可能覆盖二开修改。xboard-u 改用 [正式 Release](https://github.com/Toto0912/Xboard-u/releases) 的镜像和升级覆盖文件，旧更新入口只返回说明，不修改代码或数据。以后升级时先阅读对应版本变更与迁移说明，在备份后把覆盖文件中的镜像改为目标固定版本，再拉取镜像并以原项目名重建服务。
+完成迁移后，继续使用原版命令：
 
-`xbctl upgrade` 只更新 xboard-node-u 节点端，与面板升级分别管理。
+```bash
+docker compose pull && docker compose up -d
+```
+
+无需运行 `git pull` 或旧版 `update.sh`，节点端仍由 `xbctl upgrade` 单独更新。
+
+## 回退
+
+停止面板，把编排中的镜像恢复为保留的旧镜像，并以相同项目名和挂载重新启动。若本次只改了镜像，也可恢复备份的完整编排文件：
+
+```bash
+docker compose stop
+cp -p compose.yaml.before-xboard-u compose.yaml
+docker compose up -d
+```
+
+v0.1.0 未改数据库结构，可沿用原数据库回退。跨越其他版本的迁移或需要撤销业务写入时，须在停止全部写入后配套恢复数据库和文件，避免覆盖迁移后新增的用户及订单。
