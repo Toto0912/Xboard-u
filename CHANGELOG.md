@@ -1,6 +1,6 @@
 # 更新记录
 
-## 未发布
+## 1.1.0 — 2026-11-01
 
 - VLESS / Trojan 在 TCP/RAW + TLS / Reality 下增加可选 Fallback 输入，位于安全性设置与传输协议之间；无效输入静默清空。
 - 机器模式和单节点模式下发服务端专用 `xray_fallback`：TLS 用于普通回落，Reality 用于伪装目标覆盖，保留 SNI、密钥和客户端参数。
