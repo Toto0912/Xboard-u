@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Cache;
 use App\Utils\CacheKey;
 use App\Utils\Helper;
+use App\Support\ServerFallback;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 
@@ -215,6 +216,7 @@ class Server extends Model
 
     private const PROTOCOL_CONFIGURATIONS = [
         self::TYPE_TROJAN => [
+            'xray_fallback' => ['type' => 'string', 'default' => ''],
             'tls' => ['type' => 'integer', 'default' => 1],
             'network' => ['type' => 'string', 'default' => null],
             'network_settings' => ['type' => 'array', 'default' => null],
@@ -235,6 +237,7 @@ class Server extends Model
             ...self::UTLS_CONFIGURATION
         ],
         self::TYPE_VLESS => [
+            'xray_fallback' => ['type' => 'string', 'default' => ''],
             'tls' => ['type' => 'integer', 'default' => 0],
             'tls_settings' => self::TLS_SETTINGS_CONFIGURATION,
             'flow' => ['type' => 'string', 'default' => null],
@@ -355,6 +358,9 @@ class Server extends Model
     {
         $settings = json_decode($value, true) ?? [];
         $configs = self::PROTOCOL_CONFIGURATIONS[$this->type] ?? [];
+        if (isset($configs['xray_fallback'])) {
+            $settings['xray_fallback'] = ServerFallback::forNode($this->type, $settings);
+        }
         return $this->castSettingsWithConfig($settings, $configs);
     }
 
@@ -365,6 +371,9 @@ class Server extends Model
         }
 
         $configs = self::PROTOCOL_CONFIGURATIONS[$this->type] ?? [];
+        if (is_array($value) && isset($configs['xray_fallback'])) {
+            $value['xray_fallback'] = ServerFallback::forNode($this->type, $value);
+        }
         $castedSettings = $this->castSettingsWithConfig($value ?? [], $configs);
 
         $this->attributes['protocol_settings'] = json_encode($castedSettings);

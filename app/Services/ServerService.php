@@ -369,6 +369,12 @@ class ServerService
             default => [],
         };
 
+        $fallback = \App\Support\ServerFallback::forNode($nodeType, $protocolSettings);
+        if ($fallback !== '') {
+            // Server-only extension; never place this inside client TLS settings.
+            $response['xray_fallback'] = $fallback;
+        }
+
         if (!empty($node['route_ids'])) {
             $response['routes'] = self::getRoutes($node['route_ids']);
         }

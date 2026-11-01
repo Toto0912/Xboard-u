@@ -37,3 +37,5 @@ storage/laravels-timer-process.pid
 /bootstrap/cache/*.php
 .env.*
 !.env.example
+/public/assets/admin/assets/*.xboard-u-*.js
+/public/assets/xboard-u/admin-entry.json

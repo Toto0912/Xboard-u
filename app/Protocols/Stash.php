@@ -84,7 +84,7 @@ class Stash extends AbstractProtocol
 
     const CUSTOM_TEMPLATE_FILE = 'resources/rules/custom.stash.yaml';
     const CUSTOM_CLASH_TEMPLATE_FILE = 'resources/rules/custom.clash.yaml';
-    const DEFAULT_TEMPLATE_FILE = 'resources/rules/default.clash.yaml';
+    const DEFAULT_TEMPLATE_FILE = 'resources/rules/default.clashmeta.yaml';
 
     public function handle()
     {

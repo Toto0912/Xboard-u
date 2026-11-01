@@ -31,5 +31,7 @@ jobs:
       - run: composer install --no-interaction --prefer-dist --no-progress --no-security-blocking
       - run: mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views && touch database/database.sqlite
       - run: vendor/bin/phpunit
+      - run: php scripts/prepare-admin-assets.php
+      - run: node --check resources/js/admin-fallback.js && node --check public/assets/admin/assets/*.xboard-u-*.js
       - run: node --check public/assets/xboard-u/admin.js
       - run: bash -n install.sh && python3 scripts/test-release-installer.py

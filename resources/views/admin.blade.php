@@ -15,6 +15,9 @@
     };
   </script>
   @php
+    $adminEntryPath = public_path('assets/xboard-u/admin-entry.json');
+    $adminEntries = file_exists($adminEntryPath) ? json_decode(file_get_contents($adminEntryPath), true) : [];
+    $adminEntries = is_array($adminEntries) ? $adminEntries : [];
     $manifestPath = public_path('assets/admin/manifest.json');
     $manifest = file_exists($manifestPath) ? json_decode(file_get_contents($manifestPath), true) : null;
     $entry = is_array($manifest) ? ($manifest['index.html'] ?? null) : null;
@@ -66,7 +69,7 @@
       <script src="/assets/admin/{{ $locale }}"></script>
     @endforeach
     @foreach($scripts as $js)
-      <script type="module" crossorigin src="/assets/admin/{{ $js }}"></script>
+      <script type="module" crossorigin src="/assets/admin/{{ $adminEntries[$js] ?? $js }}"></script>
     @endforeach
   @else
     {{-- Fallback: hardcoded paths for backward compatibility --}}

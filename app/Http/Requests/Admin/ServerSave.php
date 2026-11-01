@@ -4,10 +4,21 @@
 namespace App\Http\Requests\Admin;
 
 use App\Models\Server;
+use App\Support\ServerFallback;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ServerSave extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        $settings = $this->input('protocol_settings');
+        if (is_array($settings)) {
+            $type = $this->input('type');
+            $settings['xray_fallback'] = ServerFallback::forNode(is_string($type) ? $type : null, $settings);
+            $this->merge(['protocol_settings' => $settings]);
+        }
+    }
+
     private const UTLS_RULES = [
         'utls.enabled' => 'nullable|boolean',
         'utls.fingerprint' => 'nullable|string',
@@ -57,6 +68,7 @@ class ServerSave extends FormRequest
             'rules' => 'nullable|array',
         ],
         'trojan' => [
+            'xray_fallback' => 'nullable|string',
             'tls' => 'nullable|integer',
             'network' => 'required|string',
             'network_settings' => 'nullable|array',
@@ -74,6 +86,7 @@ class ServerSave extends FormRequest
             'hop_interval' => 'integer|nullable',
         ],
         'vless' => [
+            'xray_fallback' => 'nullable|string',
             'tls' => 'required|integer',
             'network' => 'required|string',
             'network_settings' => 'nullable|array',

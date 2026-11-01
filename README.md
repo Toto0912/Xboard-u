@@ -2,12 +2,10 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-## ✨ 功能
+## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
-- 修复 HY2 等节点 TLS 内容推送配置保存后重新打开为空的问题。
-- 机器安装命令使用 xboard-node-u 正式发布资源，支持普通 Linux 和 Alpine/OpenRC。
-- 保留原版数据库、主题及节点通信接口，支持从原版迁移。
-- 提供 Linux amd64 / arm64 Docker 镜像：`ghcr.io/toto0912/xboard-u:latest`。
+- 新增 Fallback 配置，支持 Xray TLS 回落及 Reality“偷自己”。
+- 修复 TLS 内容推送保存，适配 xboard-node-u 安装，并更新默认订阅模板。
 
 ## 🚀 Quick Start
 

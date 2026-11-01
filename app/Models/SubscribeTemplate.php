@@ -14,7 +14,9 @@ class SubscribeTemplate extends Model
         'content' => 'string',
     ];
 
-    private static string $cachePrefix = 'subscribe_template:';
+    // A new generation avoids stale defaults when Docker migrates before its
+    // bundled Redis starts. Custom template content remains in the database.
+    private static string $cachePrefix = 'subscribe_template:v20261101:';
 
     public static function getContent(string $name): ?string
     {

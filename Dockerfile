@@ -55,6 +55,7 @@ COPY .docker/php/zz-xboard.ini /usr/local/etc/php/conf.d/zz-xboard.ini
 
 RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views \
     && composer install --no-cache --no-dev --no-security-blocking \
+    && php scripts/prepare-admin-assets.php \
     && php artisan storage:link \
     && chown -R www:www /www \
     && chmod -R 775 /www \

@@ -64,6 +64,16 @@ abstract class AbstractProtocol
         $this->userAgent = $userAgent;
         $this->protocolRequirements = $this->normalizeProtocolRequirements($this->protocolRequirements);
         $this->servers = HookManager::filter('protocol.servers.filtered', $this->filterServersByVersion());
+        // This field is a node-server setting, not a client outbound option.
+        $this->servers = collect($this->servers)->map(function ($server) {
+            if ($server instanceof \Illuminate\Contracts\Support\Arrayable) {
+                $server = $server->toArray();
+            }
+            if (is_array($server) && is_array($server['protocol_settings'] ?? null)) {
+                unset($server['protocol_settings']['xray_fallback']);
+            }
+            return $server;
+        })->all();
     }
 
     /**

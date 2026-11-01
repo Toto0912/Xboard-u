@@ -1,21 +1,79 @@
-mixed-port: 7890
+mixed-port: 33333
+ipv6: true
 allow-lan: true
-bind-address: "*"
+bind-address: '*'
 mode: rule
-log-level: info
+log-level: silent
 external-controller: 127.0.0.1:9090
 unified-delay: true
-tcp-concurrent: true
+keep-alive-idle: 60
+keep-alive-interval: 10
+keep-alive-probes: 3
+geodata-mode: true
+geodata-loader: standard
+geo-auto-update: true
+geo-update-interval: 24
+geox-url:
+  geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat'
+  geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat'
+sniffer:
+  enable: true
+  sniff:
+    TLS:
+      ports: [443, 8443]
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: true
+# ================= 1. TUN 模式配置 =================
+tun:
+  enable: true
+  mtu: 1420
+  stack: gvisor
+  dns-hijack:
+    - 'any:53'
+    - 'tcp://any:53'
+  auto-route: true              # 自动设置全局路由，接管系统流量
+  strict-route: true
+  auto-detect-interface: true   # 自动检测出网网卡，防止流量环路
+  route-exclude-address:
+    # --- 常见局域网 IPv4 私有网段 ---
+    - 10.0.0.0/8        # A类私有网络
+    - 172.16.0.0/12     # B类私有网络
+    - 192.168.0.0/16    # C类私有网络（最常见家用路由器网段）
+    # --- 特殊用途及本地保留 IPv4 网段 ---
+    - 127.0.0.0/8       # 本地回环地址
+    - 100.64.0.0/10     # 运营商级 CGNAT 网段
+    - 169.254.0.0/16    # 链路本地地址
+    - 224.0.0.0/4       # IPv4 组播地址
+    - 240.0.0.0/4       # 保留/E类地址（已包含 255.255.255.255）
+    # --- IPv6 本地/链路/组播地址 ---
+    - ::1/128           # IPv6 回环地址
+    - fc00::/7          # IPv6 唯一本地地址 (ULA)
+    - fe80::/10         # IPv6 链路本地地址
+    - ff00::/8          # IPv6 组播地址
+#10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,100.64.0.0/10,169.254.0.0/16,224.0.0.0/4,240.0.0.0/4,::1/128,fc00::/7,fe80::/10,ff00::/8
 
+# ================= 2. DNS 精准分流配置 =================
+# 默认走远程代理 DNS，国内/私有域名走本地本地 DNS
 dns:
   enable: true
-  ipv6: false
-  default-nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
-  use-hosts: true
+  use-hosts: false
+  use-system-hosts: false
+
+  default-nameserver:
+    - '119.29.29.29'
+    - '223.5.5.5'
+
+  proxy-server-nameserver:
+    - '119.29.29.29'
+
+  # 默认 DNS
+  nameserver:
+    - 'tls://8.8.4.4#节点选择'
+    - 'tls://1.0.0.1#节点选择'
+
   nameserver-policy:
     "+.google.com": "https://dns.cloudflare.com/dns-query"
     "+.googleapis.com": "https://dns.cloudflare.com/dns-query"
@@ -32,11 +90,7 @@ dns:
     "+.openai.com": "https://dns.cloudflare.com/dns-query"
     "+.chatgpt.com": "https://dns.cloudflare.com/dns-query"
     "+.anthropic.com": "https://dns.cloudflare.com/dns-query"
-  nameserver:
-    - https://doh.pub/dns-query
-    - https://dns.alidns.com/dns-query
-    - tls://dot.pub:853
-    - tls://dns.alidns.com:853
+
   fallback:
     - https://dns.cloudflare.com/dns-query
     - https://dns.google/dns-query
@@ -62,225 +116,57 @@ dns:
       - "+.githubusercontent.com"
       - "+.googlevideo.com"
       - "+.googleapis.cn"
+
+  # 排除列表：这些域名不会返回 Fake-IP，直接由本地解析
   fake-ip-filter:
-    - "*.lan"
-    - "*.local"
-    - "*.localhost"
-    - "*.test"
-    - localhost.ptlogin2.qq.com
-    - "+.stun.*.*"
-    - "+.stun.*.*.*"
-    - "+.stun.*.*.*.*"
-    - "lens.l.google.com"
-    - "*.srv.nintendo.net"
-    - "+.stun.playstation.net"
-    - "xbox.*.*.microsoft.com"
-    - "*.*.xboxlive.com"
-    - "+.msftncsi.com"
-    - "+.msftconnecttest.com"
+    - '*.lan'
+    - '*.localdomain'
+    - '*.example'
+    - '*.invalid'
+    - '*.localhost'
+    - '*.test'
+    - '*.local'
+    - '*.home.arpa'
+    - '*.msftconnecttest.com'
+    - '*.msftncsi.com'
+
+# ================= 3. 策略组配置 =================
 
 proxies:
 
 proxy-groups:
-  - { name: "$app_name", type: select, proxies: ["自动选择", "故障转移", "DIRECT"] }
-  - { name: "自动选择", type: url-test, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300, tolerance: 50 }
-  - { name: "故障转移", type: fallback, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300 }
+  - { name: '节点选择', type: select, proxies: ['自动选择', '故障转移', 'DIRECT'] }
+  - { name: '自动选择', type: url-test, proxies: [], url: 'https://www.google.com/generate_204', interval: 180, tolerance: 150 }
+  - { name: '故障转移', type: fallback, proxies: [], url: 'https://www.google.com/generate_204', interval: 180 }
+  - { name: '漏网之鱼', type: select, proxies: ['节点选择', 'DIRECT'] }
+
+# ================= 4. 精准分流规则 =================
+rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt'
+    path: ./ruleset/reject.yaml
+    interval: 86400
+  lancidr:
+    type: http
+    behavior: ipcidr
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt'
+    path: ./ruleset/lancidr.yaml
+    interval: 86400
+  cncidr:
+    type: http
+    behavior: ipcidr
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt'
+    path: ./ruleset/cncidr.yaml
+    interval: 86400
 
 rules:
-  # Custom
-  # Ad blocking
-  - DOMAIN-KEYWORD,admarvel,REJECT
-  - DOMAIN-KEYWORD,admaster,REJECT
-  - DOMAIN-KEYWORD,adsage,REJECT
-  - DOMAIN-KEYWORD,adsmogo,REJECT
-  - DOMAIN-KEYWORD,adsrvmedia,REJECT
-  - DOMAIN-KEYWORD,adwords,REJECT
-  - DOMAIN-KEYWORD,adservice,REJECT
-  - DOMAIN-KEYWORD,domob,REJECT
-  - DOMAIN-KEYWORD,duomeng,REJECT
-  - DOMAIN-KEYWORD,dwtrack,REJECT
-  - DOMAIN-KEYWORD,guanggao,REJECT
-  - DOMAIN-KEYWORD,lianmeng,REJECT
-  - DOMAIN-KEYWORD,omgmta,REJECT
-  - DOMAIN-KEYWORD,openx,REJECT
-  - DOMAIN-KEYWORD,partnerad,REJECT
-  - DOMAIN-KEYWORD,supersonicads,REJECT
-  - DOMAIN-KEYWORD,umeng,REJECT
-  - DOMAIN-KEYWORD,zjtoolbar,REJECT
-  - DOMAIN-SUFFIX,appsflyer.com,REJECT
-  - DOMAIN-SUFFIX,doubleclick.net,REJECT
-  - DOMAIN-SUFFIX,mmstat.com,REJECT
-  # LAN
-  - DOMAIN-SUFFIX,local,DIRECT
-  - DOMAIN-SUFFIX,localhost,DIRECT
-  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,17.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
-  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
-  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
-  - IP-CIDR,198.18.0.0/16,DIRECT,no-resolve
-  - IP-CIDR,224.0.0.0/4,DIRECT,no-resolve
-  - IP-CIDR6,::1/128,DIRECT,no-resolve
-  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
-  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
-  # Apple (App Store via proxy for foreign regions)
-  - DOMAIN-SUFFIX,apps.apple.com,$app_name
-  - DOMAIN-SUFFIX,itunes.apple.com,$app_name
-  - DOMAIN-SUFFIX,blobstore.apple.com,$app_name
-  - DOMAIN,safebrowsing.urlsec.qq.com,DIRECT
-  - DOMAIN-SUFFIX,apple.com,DIRECT
-  - DOMAIN-SUFFIX,apple-cloudkit.com,DIRECT
-  - DOMAIN-SUFFIX,icloud.com,DIRECT
-  - DOMAIN-SUFFIX,icloud-content.com,DIRECT
-  - DOMAIN-SUFFIX,mzstatic.com,DIRECT
-  - DOMAIN-SUFFIX,aaplimg.com,DIRECT
-  - DOMAIN-SUFFIX,cdn-apple.com,DIRECT
-  - DOMAIN-SUFFIX,akadns.net,DIRECT
-  # China direct (KEYWORD)
-  - DOMAIN-KEYWORD,baidu,DIRECT
-  - DOMAIN-KEYWORD,alibaba,DIRECT
-  - DOMAIN-KEYWORD,alicdn,DIRECT
-  - DOMAIN-KEYWORD,alipay,DIRECT
-  - DOMAIN-KEYWORD,taobao,DIRECT
-  - DOMAIN-KEYWORD,tencent,DIRECT
-  - DOMAIN-KEYWORD,bilibili,DIRECT
-  - DOMAIN-KEYWORD,weibo,DIRECT
-  - DOMAIN-KEYWORD,douyin,DIRECT
-  - DOMAIN-KEYWORD,bytedance,DIRECT
-  - DOMAIN-KEYWORD,xiaomi,DIRECT
-  - DOMAIN-KEYWORD,huawei,DIRECT
-  - DOMAIN-KEYWORD,netease,DIRECT
-  - DOMAIN-KEYWORD,meituan,DIRECT
-  - DOMAIN-KEYWORD,pinduoduo,DIRECT
-  - DOMAIN-KEYWORD,kuaishou,DIRECT
-  - DOMAIN-KEYWORD,jingdong,DIRECT
-  - DOMAIN-KEYWORD,officecdn,DIRECT
-  # China direct (SUFFIX)
-  - DOMAIN-SUFFIX,qq.com,DIRECT
-  - DOMAIN-SUFFIX,weixin.com,DIRECT
-  - DOMAIN-SUFFIX,wechat.com,DIRECT
-  - DOMAIN-SUFFIX,gtimg.com,DIRECT
-  - DOMAIN-SUFFIX,qcloud.com,DIRECT
-  - DOMAIN-SUFFIX,myqcloud.com,DIRECT
-  - DOMAIN-SUFFIX,qpic.cn,DIRECT
-  - DOMAIN-SUFFIX,tenpay.com,DIRECT
-  - DOMAIN-SUFFIX,tmall.com,DIRECT
-  - DOMAIN-SUFFIX,jd.com,DIRECT
-  - DOMAIN-SUFFIX,360buyimg.com,DIRECT
-  - DOMAIN-SUFFIX,iqiyi.com,DIRECT
-  - DOMAIN-SUFFIX,youku.com,DIRECT
-  - DOMAIN-SUFFIX,ykimg.com,DIRECT
-  - DOMAIN-SUFFIX,tudou.com,DIRECT
-  - DOMAIN-SUFFIX,acfun.tv,DIRECT
-  - DOMAIN-SUFFIX,hdslb.com,DIRECT
-  - DOMAIN-SUFFIX,sohu.com,DIRECT
-  - DOMAIN-SUFFIX,sogou.com,DIRECT
-  - DOMAIN-SUFFIX,zhihu.com,DIRECT
-  - DOMAIN-SUFFIX,zhimg.com,DIRECT
-  - DOMAIN-SUFFIX,douban.com,DIRECT
-  - DOMAIN-SUFFIX,doubanio.com,DIRECT
-  - DOMAIN-SUFFIX,163.com,DIRECT
-  - DOMAIN-SUFFIX,126.com,DIRECT
-  - DOMAIN-SUFFIX,126.net,DIRECT
-  - DOMAIN-SUFFIX,127.net,DIRECT
-  - DOMAIN-SUFFIX,yeah.net,DIRECT
-  - DOMAIN-SUFFIX,sina.com,DIRECT
-  - DOMAIN-SUFFIX,sinaimg.cn,DIRECT
-  - DOMAIN-SUFFIX,ximalaya.com,DIRECT
-  - DOMAIN-SUFFIX,xmcdn.com,DIRECT
-  - DOMAIN-SUFFIX,csdn.net,DIRECT
-  - DOMAIN-SUFFIX,gitee.com,DIRECT
-  - DOMAIN-SUFFIX,jianshu.com,DIRECT
-  - DOMAIN-SUFFIX,cnblogs.com,DIRECT
-  - DOMAIN-SUFFIX,oschina.net,DIRECT
-  - DOMAIN-SUFFIX,ele.me,DIRECT
-  - DOMAIN-SUFFIX,ctrip.com,DIRECT
-  - DOMAIN-SUFFIX,suning.com,DIRECT
-  - DOMAIN-SUFFIX,dianping.com,DIRECT
-  - DOMAIN-SUFFIX,amap.com,DIRECT
-  - DOMAIN-SUFFIX,autonavi.com,DIRECT
-  - DOMAIN-SUFFIX,mi.com,DIRECT
-  - DOMAIN-SUFFIX,miui.com,DIRECT
-  - DOMAIN-SUFFIX,ifeng.com,DIRECT
-  - DOMAIN-SUFFIX,youdao.com,DIRECT
-  - DOMAIN-SUFFIX,iciba.com,DIRECT
-  - DOMAIN-SUFFIX,xunlei.com,DIRECT
-  - DOMAIN-SUFFIX,smzdm.com,DIRECT
-  - DOMAIN-SUFFIX,sspai.com,DIRECT
-  - DOMAIN-SUFFIX,36kr.com,DIRECT
-  - DOMAIN-SUFFIX,speedtest.net,DIRECT
-  - DOMAIN-SUFFIX,microsoft.com,DIRECT
-  - DOMAIN-SUFFIX,microsoftonline.com,DIRECT
-  - DOMAIN-SUFFIX,office.com,DIRECT
-  - DOMAIN-SUFFIX,office365.com,DIRECT
-  - DOMAIN-SUFFIX,windows.com,DIRECT
-  - DOMAIN-SUFFIX,windowsupdate.com,DIRECT
-  - DOMAIN-SUFFIX,live.com,DIRECT
-  - DOMAIN-SUFFIX,msn.com,DIRECT
-  - DOMAIN-SUFFIX,cn,DIRECT
-  - DOMAIN-KEYWORD,-cn,DIRECT
-  # Blocked services (KEYWORD)
-  - DOMAIN-KEYWORD,google,$app_name
-  - DOMAIN-KEYWORD,gmail,$app_name
-  - DOMAIN-KEYWORD,youtube,$app_name
-  - DOMAIN-KEYWORD,facebook,$app_name
-  - DOMAIN-KEYWORD,twitter,$app_name
-  - DOMAIN-KEYWORD,instagram,$app_name
-  - DOMAIN-KEYWORD,whatsapp,$app_name
-  - DOMAIN-KEYWORD,telegram,$app_name
-  - DOMAIN-KEYWORD,github,$app_name
-  - DOMAIN-KEYWORD,blogspot,$app_name
-  - DOMAIN-KEYWORD,dropbox,$app_name
-  - DOMAIN-KEYWORD,wikipedia,$app_name
-  - DOMAIN-KEYWORD,pinterest,$app_name
-  - DOMAIN-KEYWORD,discord,$app_name
-  - DOMAIN-KEYWORD,openai,$app_name
-  - DOMAIN-KEYWORD,anthropic,$app_name
-  - DOMAIN-KEYWORD,netflix,$app_name
-  - DOMAIN-KEYWORD,spotify,$app_name
-  - DOMAIN-KEYWORD,amazon,$app_name
-  # Blocked services (SUFFIX)
-  - DOMAIN-SUFFIX,t.co,$app_name
-  - DOMAIN-SUFFIX,x.com,$app_name
-  - DOMAIN-SUFFIX,twimg.com,$app_name
-  - DOMAIN-SUFFIX,fb.me,$app_name
-  - DOMAIN-SUFFIX,fbcdn.net,$app_name
-  - DOMAIN-SUFFIX,youtu.be,$app_name
-  - DOMAIN-SUFFIX,ytimg.com,$app_name
-  - DOMAIN-SUFFIX,gstatic.com,$app_name
-  - DOMAIN-SUFFIX,ggpht.com,$app_name
-  - DOMAIN-SUFFIX,googlevideo.com,$app_name
-  - DOMAIN-SUFFIX,v2ex.com,$app_name
-  - DOMAIN-SUFFIX,medium.com,$app_name
-  - DOMAIN-SUFFIX,reddit.com,$app_name
-  - DOMAIN-SUFFIX,redd.it,$app_name
-  - DOMAIN-SUFFIX,imgur.com,$app_name
-  - DOMAIN-SUFFIX,pixiv.net,$app_name
-  - DOMAIN-SUFFIX,nytimes.com,$app_name
-  - DOMAIN-SUFFIX,nyt.com,$app_name
-  - DOMAIN-SUFFIX,bbc.com,$app_name
-  - DOMAIN-SUFFIX,bbc.co.uk,$app_name
-  - DOMAIN-SUFFIX,steamcommunity.com,$app_name
-  - DOMAIN-SUFFIX,twitch.tv,$app_name
-  - DOMAIN-SUFFIX,vimeo.com,$app_name
-  - DOMAIN-SUFFIX,tumblr.com,$app_name
-  - DOMAIN-SUFFIX,linkedin.com,$app_name
-  - DOMAIN-SUFFIX,licdn.com,$app_name
-  - DOMAIN-SUFFIX,mega.nz,$app_name
-  - DOMAIN-SUFFIX,archive.org,$app_name
-  - DOMAIN-SUFFIX,wikimedia.org,$app_name
-  - DOMAIN-SUFFIX,soundcloud.com,$app_name
-  # Telegram IP
-  - IP-CIDR,91.108.4.0/22,$app_name,no-resolve
-  - IP-CIDR,91.108.8.0/21,$app_name,no-resolve
-  - IP-CIDR,91.108.12.0/22,$app_name,no-resolve
-  - IP-CIDR,91.108.16.0/22,$app_name,no-resolve
-  - IP-CIDR,91.108.56.0/22,$app_name,no-resolve
-  - IP-CIDR,149.154.160.0/20,$app_name,no-resolve
-  - IP-CIDR6,2001:67c:4e8::/48,$app_name,no-resolve
-  - IP-CIDR6,2001:b28:f23d::/48,$app_name,no-resolve
-  - IP-CIDR6,2001:b28:f23f::/48,$app_name,no-resolve
-  # Fallback
-  - GEOIP,CN,DIRECT
-  - MATCH,$app_name
+  - 'RULE-SET,lancidr,DIRECT,no-resolve'
+  - 'RULE-SET,cncidr,DIRECT,no-resolve'
+  - 'GEOSITE,private,DIRECT'
+  - 'GEOSITE,cn,DIRECT'
+  - 'GEOIP,cn,DIRECT,no-resolve'
+  - 'AND,((DST-PORT,443),(NETWORK,UDP)),REJECT'
+  - 'GEOSITE,geolocation-!cn,节点选择'
+  - 'MATCH,漏网之鱼'
