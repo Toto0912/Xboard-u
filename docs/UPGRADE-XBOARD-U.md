@@ -14,18 +14,17 @@ xboard-u 基于 `cedar2025/Xboard` 的 `e68fec50ef48d86f7666c5ff5e758f2a6e9fa313
 
 以下命令用于升级已有安装；**不要运行 `xboard:install`、`key:generate`、`migrate:fresh` 或 `docker compose down -v`**。
 
-### 1. 在新源码目录构建镜像
+### 1. 拉取固定版本镜像
 
-取得完整 xboard-u 源码后，在源码目录执行：
+从 GitHub 拉取发布镜像，无需在服务器构建：
 
 ```sh
-git submodule update --init --recursive
-docker build -t xboard-u:local .
+docker pull ghcr.io/toto0912/xboard-u:v0.1.0
 ```
 
 此镜像使用当前检出的代码，不会在构建时下载另一份官方源码。`composer.lock` 参与构建。管理前端继续使用固定版本的官方子模块，不需要修改或重编译其压缩脚本。
 
-目前为本地开发版，尚无公开 xboard-u 面板镜像或一键在线升级地址；`xboard-node-u` 节点端则使用已发布的正式版。
+镜像支持 Linux amd64 / arm64。源码构建方式见 [README](../README.md#从源码构建)，节点端继续使用 xboard-node-u 的独立 Release。
 
 ### 2. 停写并备份
 
@@ -43,12 +42,18 @@ docker build -t xboard-u:local .
 
 ### 3. 只覆盖面板镜像
 
-在原部署目录新建 `compose.xboard-u.yaml`：
+在原部署目录下载升级覆盖文件（如已有同名文件，先备份）：
+
+```sh
+curl -fL https://github.com/Toto0912/Xboard-u/releases/download/v0.1.0/compose.xboard-u.yaml -o compose.xboard-u.yaml
+```
+
+内容如下；它只覆盖镜像，不能单独作为完整编排启动：
 
 ```yaml
 services:
   xboard:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
 ```
 
 以下假定原文件名为 `compose.yaml`、服务名为 `xboard`。若你的名字不同，替换为原有名字；如果原来还有其他 `-f`、`--env-file` 或 `-p` 参数，继续保留。
@@ -77,6 +82,6 @@ docker compose -f compose.yaml -f compose.xboard-u.yaml logs --tail=100 xboard
 
 ## 后续更新
 
-原版 `update.sh` 和内置代码更新逻辑会拉取/重置原仓库，可能覆盖二开修改。xboard-u 改用已验证源码/镜像部署更新，旧更新入口只返回说明，不修改代码或数据。日后发布正式仓库/镜像后再提供对应的更新地址。
+原版 `update.sh` 和内置代码更新逻辑会拉取/重置原仓库，可能覆盖二开修改。xboard-u 改用 [正式 Release](https://github.com/Toto0912/Xboard-u/releases) 的镜像和升级覆盖文件，旧更新入口只返回说明，不修改代码或数据。以后升级时先阅读对应版本变更与迁移说明，在备份后把覆盖文件中的镜像改为目标固定版本，再拉取镜像并以原项目名重建服务。
 
 `xbctl upgrade` 只更新 xboard-node-u 节点端，与面板升级分别管理。

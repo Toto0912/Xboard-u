@@ -19,11 +19,10 @@
 
 ## 1. 准备新镜像，保留旧镜像
 
-在独立源码目录构建或载入已经验证的 `xboard-u:local` 镜像，不要覆盖原网站目录中的配置和数据。当前面板尚未发布公共镜像。
+从 GitHub Container Registry 拉取固定版本镜像，不要覆盖原网站目录中的配置和数据：
 
 ```sh
-git submodule update --init --recursive
-docker build -t xboard-u:local .
+docker pull ghcr.io/toto0912/xboard-u:v0.1.0
 ```
 
 在 aaPanel 中确认原面板容器名、编排目录、服务名和项目名。不要新建另一个编排来替代原编排；项目名改变会改变默认命名卷名称。
@@ -54,12 +53,18 @@ docker compose -p "$PROJECT_NAME" -f compose.yaml stop xboard
 
 ## 3. 只替换原编排中的面板镜像
 
-在原编排目录创建 `compose.xboard-u.yaml`：
+在原编排目录下载正式发布的升级覆盖文件（若已有同名覆盖文件，先备份；不要覆盖原 `compose.yaml`）：
+
+```sh
+curl -fL https://github.com/Toto0912/Xboard-u/releases/download/v0.1.0/compose.xboard-u.yaml -o compose.xboard-u.yaml
+```
+
+文件内容如下，也可手动创建：
 
 ```yaml
 services:
   xboard:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
 ```
 
 覆盖文件只包含镜像，不写网络、端口、数据库服务或挂载。原 `network_mode: host`、`.env`、外置 MySQL、Redis 命名卷和其他挂载继续沿用。

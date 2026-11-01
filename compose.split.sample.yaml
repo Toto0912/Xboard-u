@@ -21,7 +21,7 @@ services:
       - ./.docker/caddy/Caddyfile.split:/etc/caddy/Caddyfile:ro
 
   web:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
     restart: unless-stopped
     depends_on:
       - redis
@@ -38,7 +38,7 @@ services:
       ENABLE_WS_SERVER: "false"
 
   horizon:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
     restart: unless-stopped
     depends_on:
       - redis
@@ -50,7 +50,7 @@ services:
       ENABLE_WS_SERVER: "false"
 
   ws-server:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
     restart: unless-stopped
     depends_on:
       - redis

@@ -1,6 +1,6 @@
 services:
   xboard:
-    image: xboard-u:local
+    image: ghcr.io/toto0912/xboard-u:v0.1.0
     restart: unless-stopped
     network_mode: host
     volumes:

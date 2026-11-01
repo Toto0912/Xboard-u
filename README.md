@@ -2,7 +2,7 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前为 **0.1.0 本地开发版**，基线为官方 `e68fec50ef48d86f7666c5ff5e758f2a6e9fa313`（2026-10-29）。尚未发布公开面板仓库或镜像。
+当前版本 **v0.1.0**，基线为官方 `e68fec50ef48d86f7666c5ff5e758f2a6e9fa313`（2026-10-29）。源码：[Toto0912/Xboard-u](https://github.com/Toto0912/Xboard-u)，发布资源：[Releases](https://github.com/Toto0912/Xboard-u/releases)，镜像：`ghcr.io/toto0912/xboard-u:v0.1.0`（Linux amd64 / arm64）。
 
 ## 本轮改动
 
@@ -17,23 +17,36 @@
 
 问题源于已有节点的空配置（JSON `[]`）使前端嵌套字段在提交时丢失，修复覆盖使用相同证书设置的协议。已经丢失的内容需要在升级后重新填写；已有正确配置无需修改。升级后刷新管理页，让列表重新读取数据。
 
-## 构建与新装
+## Docker 一键新装
 
-要求 Docker；源码运行要求 PHP >= 8.2.35 及原版要求的扩展、Redis 等依赖。在源码目录执行：
+需要已安装 Docker、Compose v2、Bash、curl 和 sha256sum。以下命令用于**全新安装**，默认目录 `/opt/xboard-u`；脚本遇到非空目录会退出，避免覆盖已有面板。资源从本仓库正式 Release 下载并校验 SHA256，镜像从 GitHub Container Registry 拉取。
 
-```sh
-git submodule update --init --recursive
-docker build -t xboard-u:local .
-```
+### aaPanel + Docker + MySQL（推荐）
 
-新装时在**单独的运行目录**使用本项目 `compose.sample.yaml`（复制为 `compose.yaml`），创建空 `.env` 文件，然后执行以下命令。仅适合全新数据库：
+在服务器终端以 root 执行；已有面板请直接阅读下方升级说明：
 
 ```sh
-docker compose run -it --rm -e ENABLE_SQLITE=true -e ENABLE_REDIS=true -e ADMIN_ACCOUNT=admin@example.com xboard php artisan xboard:install
-docker compose up -d
+curl -fL https://github.com/Toto0912/Xboard-u/releases/latest/download/install.sh -o /tmp/xboard-u-install.sh && bash /tmp/xboard-u-install.sh --layout host
 ```
 
-默认访问 `http://服务器地址:7001`，保存初始化时输出的管理员凭据。开发时依赖、数据库、日志、截图和测试产物都放在源码之外的运行副本。
+交互界面选择 MySQL，填写 aaPanel 中**新建的空数据库**信息；host 模式可通过 `127.0.0.1` 连接宿主机 MySQL。不要填入已有生产库。Nginx 反向代理到 `127.0.0.1:7001`，WebSocket 按原版方式启用。
+
+### 普通 Docker + SQLite
+
+```sh
+curl -fL https://github.com/Toto0912/Xboard-u/releases/latest/download/install.sh -o /tmp/xboard-u-install.sh && bash /tmp/xboard-u-install.sh --sqlite
+```
+
+默认访问 `http://服务器地址:7001`，保存初始化时输出的管理员凭据和管理入口。使用 `--dir /绝对路径` 修改新装目录，`--version v0.1.0` 固定版本，`--download-only` 只下载配置。脚本不会安装 Docker，也不会修改已有防火墙或反向代理。
+
+安装后进入运行目录管理：
+
+```sh
+cd /opt/xboard-u
+docker compose logs --tail=100 -f xboard  # 查看日志
+docker compose restart xboard            # 重启面板
+docker compose stop xboard               # 停止面板
+```
 
 ## 原版无损升级
 
@@ -44,6 +57,20 @@ docker compose up -d
 使用官方推荐的 **aaPanel + Docker + MySQL** 部署时，请阅读 [专用升级指南](docs/AAPANEL-MYSQL-UPGRADE.md)。已用 MySQL 5.7.44 的真实备份验证全部 33 张表的数据/结构保留及镜像回退，并通过 Nginx 完成 WS 和 HY2 联动测试。
 
 原版会覆盖二开代码的自更新入口已停用，目前使用源码/镜像部署更新。节点端仍通过 `xbctl upgrade` 单独更新。
+
+发布附件中的 `compose.xboard-u.yaml` 是**升级覆盖文件**，仅修改 `xboard` 服务的镜像；不能单独作为完整编排启动。先备份和停写，再按升级文档在原编排目录合并使用。不要下载新装编排文件覆盖原编排。
+
+## 从源码构建
+
+```sh
+git clone --recurse-submodules https://github.com/Toto0912/Xboard-u.git
+cd Xboard-u
+git checkout v0.1.0
+git submodule update --init --recursive
+docker build -t xboard-u:local .
+```
+
+构建使用当前检出的代码、锁定依赖和管理前端。运行时在单独目录复制合适的 Compose 模板，将面板镜像改为 `xboard-u:local`。Release 的 `xboard-u-source-with-admin.tar.gz` 已包含固定管理前端；GitHub 自动生成的 Source code 压缩包不包含子模块内容。源码直接运行需要 PHP >= 8.2.35、原版所需扩展及 Redis 等依赖。
 
 ## 开发与验证
 
