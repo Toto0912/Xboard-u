@@ -77,6 +77,7 @@
     <script src="/assets/admin/locales/zh-CN.js"></script>
     <script src="/assets/admin/locales/ko-KR.js"></script>
   @endif
+  <script src="/assets/xboard-u/admin.js?v=0.1.0"></script>
 </head>
 
 <body>

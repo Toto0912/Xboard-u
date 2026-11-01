@@ -8,6 +8,7 @@ use App\Models\Server;
 use App\Models\ServerMachine;
 use App\Models\ServerMachineLoadHistory;
 use App\Services\NodeSyncService;
+use App\Services\MachineInstallCommand;
 use Illuminate\Http\Request;
 
 class MachineController extends Controller
@@ -202,14 +203,6 @@ class MachineController extends Controller
     private function buildInstallCommand(Request $request, ServerMachine $machine): string
     {
         $panelUrl = rtrim((string) (admin_setting('app_url') ?: $request->getSchemeAndHttpHost()), '/');
-        $installerUrl = 'https://raw.githubusercontent.com/cedar2025/xboard-node/dev/install.sh';
-
-        return sprintf(
-            'curl -fsSL %s | sudo bash -s -- --mode machine --panel %s --token %s --machine-id %d',
-            $installerUrl,
-            escapeshellarg($panelUrl),
-            escapeshellarg($machine->token),
-            $machine->id
-        );
+        return MachineInstallCommand::build($panelUrl, $machine->token, $machine->id);
     }
 }

@@ -1,0 +1,33 @@
+name: Panel regression tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: bcmath, curl, dom, mbstring, pdo_sqlite, redis, sockets, zip
+          coverage: none
+          tools: composer
+      - run: composer install --no-interaction --prefer-dist --no-progress --no-security-blocking
+      - run: mkdir -p bootstrap/cache storage/framework/cache/data storage/framework/sessions storage/framework/views && touch database/database.sqlite
+      - run: vendor/bin/phpunit
+      - run: node --check public/assets/xboard-u/admin.js

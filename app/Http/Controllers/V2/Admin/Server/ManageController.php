@@ -19,7 +19,12 @@ class ManageController extends Controller
         $servers = ServerService::getAllServers()->map(function ($item) {
             $item['groups'] = ServerGroup::whereIn('id', $item['group_ids'] ?? [])->get(['name', 'id']);
             $item['parent'] = $item->parent;
-            return $item;
+            $data = $item->toArray();
+            // Nested form fields must start on a JSON object. Named properties
+            // assigned to [] by react-hook-form disappear during JSON.stringify.
+            // Convert after toArray(), otherwise the model's array cast restores [].
+            $data['cert_config'] = (object) ($data['cert_config'] ?? []);
+            return $data;
         });
         return $this->success($servers);
     }
