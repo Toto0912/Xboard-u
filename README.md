@@ -41,6 +41,8 @@ docker compose up -d
 
 请阅读 [完整升级与回退说明](docs/UPGRADE-XBOARD-U.md)，包括 SQLite/MySQL 备份、保留 Compose 项目名和挂载、镜像切换与回退。当前分支没有新增或修改数据库迁移；任意历史版本或第三方修改仍需在副本验证。无损指数据和配置保留，不代表零停机。
 
+使用官方推荐的 **aaPanel + Docker + MySQL** 部署时，请阅读 [专用升级指南](docs/AAPANEL-MYSQL-UPGRADE.md)。已用 MySQL 5.7.44 的真实备份验证全部 33 张表的数据/结构保留及镜像回退，并通过 Nginx 完成 WS 和 HY2 联动测试。
+
 原版会覆盖二开代码的自更新入口已停用，目前使用源码/镜像部署更新。节点端仍通过 `xbctl upgrade` 单独更新。
 
 ## 开发与验证

@@ -10,6 +10,8 @@ xboard-u 基于 `cedar2025/Xboard` 的 `e68fec50ef48d86f7666c5ff5e758f2a6e9fa313
 
 ## Docker：复用原部署和数据
 
+**aaPanel + Docker + 外置 MySQL** 已使用 MySQL 5.7.44 真实备份完成本地升级/回退验证，请优先阅读 [aaPanel + MySQL 升级指南](AAPANEL-MYSQL-UPGRADE.md)。生产只替换镜像并复用当前库，不需要导入测试备份。
+
 以下命令用于升级已有安装；**不要运行 `xboard:install`、`key:generate`、`migrate:fresh` 或 `docker compose down -v`**。
 
 ### 1. 在新源码目录构建镜像
