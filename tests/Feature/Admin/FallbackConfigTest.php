@@ -103,6 +103,9 @@ class FallbackConfigTest extends TestCase
         $this->assertSame('', $node->protocol_settings['xray_fallback']);
         $payload['protocol_settings']['tls'] = 2;
         $node = Server::create($payload);
+        $this->assertSame('', $node->protocol_settings['xray_fallback']);
+        $payload['protocol_settings']['encryption']['decryption'] = 'none';
+        $node = Server::create($payload);
         $this->assertSame('127.0.0.1:8080', $node->protocol_settings['xray_fallback']);
     }
 
@@ -117,6 +120,7 @@ class FallbackConfigTest extends TestCase
         $this->getJson('/api/v2/server/config?token=local-machine-token&machine_id=' . $machine->id . '&node_id=' . $node->id)
             ->assertOk()->assertJsonPath('xray_fallback', '127.0.0.1:8443');
         $this->assertSame('fallback.example.test', ServerService::buildNodeConfig($node)['tls_settings']['server_name']);
+        $this->assertSame($node->protocol_settings['reality_settings'], ServerService::buildNodeConfig($node)['tls_settings']);
     }
 
     public function test_client_subscriptions_do_not_change_or_expose_the_server_target(): void

@@ -43,8 +43,8 @@ final class ServerFallback
             return '';
         }
         // Xray rejects protocol-layer fallbacks together with VLESS Encryption.
-        // Reality uses its separate handshake target and has no such conflict.
-        if ($type === 'vless' && $tls === 1 && data_get($settings, 'encryption.enabled') &&
+        // This also applies when the transport security is Reality.
+        if ($type === 'vless' && data_get($settings, 'encryption.enabled') &&
             !in_array(data_get($settings, 'encryption.decryption'), [null, '', 'none'], true)) {
             return '';
         }

@@ -5,12 +5,12 @@ function XboardFallbackInput({form, protocol}) {
   const network = form.watch('network') || 'tcp';
   if (![1, 2].includes(tls) || !['tcp', 'raw'].includes(network)) return null;
   const encryption = form.watch('encryption');
-  const incompatible = protocol === 'vless' && tls === 1 && encryption?.enabled &&
+  const incompatible = protocol === 'vless' && encryption?.enabled &&
     encryption.decryption && encryption.decryption !== 'none';
   const description = incompatible
-    ? 'VLESS 额外加密与普通 TLS 回落不能同时使用；保存时此项按空值处理。'
+    ? 'VLESS 额外加密与协议层回落不能同时使用（TLS / Reality 均适用）；保存时此项按空值处理。'
     : tls === 2
-      ? 'Reality 目标站，例如 127.0.0.1:8443；目标须提供 HTTPS / TLS 1.3，证书匹配上方 SNI。'
+      ? 'Reality 握手通过后的协议层回落，例如明文 HTTP 网站 127.0.0.1:8080；不覆盖 Reality 目标站。普通浏览器仍转发到上方 Reality 目标。'
       : 'TLS 解密后的回落目标，例如 127.0.0.1:8080；通常填写明文 HTTP 网站端口。';
   return Q.jsx($y, {
     control: form.control,
@@ -27,7 +27,7 @@ function XboardFallbackInput({form, protocol}) {
           value: field.value ?? '',
           disabled: Boolean(incompatible),
           className: 'font-mono text-xs',
-          placeholder: tls === 2 ? '127.0.0.1:8443 或 example.com:443' : '127.0.0.1:8080 或 example.com:80',
+          placeholder: '127.0.0.1:8080 或 example.com:80',
           autoComplete: 'off'
         })}),
         Q.jsx(Xy, {className: 'text-[11px] text-muted-foreground',

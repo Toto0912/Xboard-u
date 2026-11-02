@@ -24,6 +24,8 @@ class AdminAssetPatcherTest extends TestCase
         }
         $this->assertSame($source, file_get_contents($path));
         $this->assertStringContainsString('sing-box', $patched);
+        $this->assertStringContainsString('不覆盖 Reality 目标站', $patched);
+        $this->assertStringNotContainsString('Reality 目标站，例如', $patched);
     }
 
     public function test_changed_upstream_assets_fail_explicitly(): void

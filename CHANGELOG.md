@@ -1,5 +1,12 @@
 # 更新记录
 
+## 1.1.2 — 2026-11-02
+
+- Fallback 统一采用 Xray 原生协议层语义，Reality 不再把回落输入当作 HTTPS 伪装目标覆盖，保留原 Reality 配置。
+- 更新 TLS / Reality 输入说明；VLESS 额外加密在两种安全性下都与协议层回落不兼容，保存时清空并提示。
+- 保持保存重开、机器 / 单节点下发和客户端订阅隔离；不新增数据库迁移，不自动删除旧配置。
+- 与 xboard-node-u v1.1.2 对齐，补充旧 Reality Fallback 配置的升级注意事项。
+
 ## 1.1.1 — 2026-11-02
 
 - 补齐 VLESS + XHTTP 的 Clash Meta / Mihomo 订阅转换，将 Xray `extra.downloadSettings` 转为原生 `xhttp-opts.download-settings`，转换下行地址、端口、传输参数及 TLS / Reality 设置。

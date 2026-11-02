@@ -2,9 +2,11 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
+当前版本：**v1.1.2**。
+
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
-- 新增 Fallback 配置，支持 Xray TLS 回落及 Reality“偷自己”。
+- 新增 Fallback 配置，TLS / Reality 均使用 Xray 原生协议层回落，保留 Reality 原目标。
 - v1.1.1 补齐 Clash Meta / Mihomo 的 XHTTP 上下行分离订阅转换，详见[配置说明](docs/二次开发功能说明.md#xhttp-上下行分离订阅v111)。
 - 修复 TLS 内容推送保存，适配 xboard-node-u 安装，并更新默认订阅模板。
 
