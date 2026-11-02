@@ -7,6 +7,8 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
+use App\Support\MihomoXhttp;
+use Illuminate\Support\Facades\Log;
 
 class ClashMeta extends AbstractProtocol
 {
@@ -167,8 +169,10 @@ class ClashMeta extends AbstractProtocol
                 array_push($proxies, $item['name']);
             }
             if ($item['type'] === Server::TYPE_VLESS) {
-                array_push($proxy, self::buildVless($item['password'], $item));
-                array_push($proxies, $item['name']);
+                if ($converted = self::buildVless($item['password'], $item)) {
+                    $proxy[] = $converted;
+                    $proxies[] = $item['name'];
+                }
             }
             if ($item['type'] === Server::TYPE_HYSTERIA) {
                 array_push($proxy, self::buildHysteria($item['password'], $item, $user));
@@ -224,7 +228,7 @@ class ClashMeta extends AbstractProtocol
         $config['proxy-groups'] = array_values($config['proxy-groups']);
         $config = $this->buildRules($config);
 
-        $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+        $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_OBJECT_AS_MAP);
         $yaml = str_replace('$app_name', admin_setting('app_name', 'XBoard'), $yaml);
         return response($yaml)
             ->header('content-type', 'text/yaml')
@@ -491,13 +495,17 @@ class ClashMeta extends AbstractProtocol
                 break;
             case 'xhttp':
                 $array['network'] = 'xhttp';
-                $xhttpOpts = [];
-                if ($path = data_get($protocol_settings, 'network_settings.path'))
-                    $xhttpOpts['path'] = $path;
-                if ($host = data_get($protocol_settings, 'network_settings.host'))
-                    $xhttpOpts['host'] = $host;
-                if ($mode = data_get($protocol_settings, 'network_settings.mode'))
-                    $xhttpOpts['mode'] = $mode;
+                try {
+                    $settings = data_get($protocol_settings, 'network_settings', []);
+                    if (!is_array($settings)) {
+                        throw new \InvalidArgumentException('XHTTP settings must be a JSON object');
+                    }
+                    $xhttpOpts = MihomoXhttp::convert($settings);
+                } catch (\InvalidArgumentException $e) {
+                    // Do not expose addresses, UUIDs, keys or the submitted JSON in logs.
+                    Log::warning('Skipped incompatible Mihomo XHTTP node', ['node_id' => $server['id'] ?? null, 'reason' => $e->getMessage()]);
+                    return null;
+                }
                 if (!empty($xhttpOpts))
                     $array['xhttp-opts'] = $xhttpOpts;
                 break;

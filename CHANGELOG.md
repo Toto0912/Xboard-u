@@ -1,5 +1,14 @@
 # 更新记录
 
+## 1.1.1 — 2026-11-02
+
+- 补齐 VLESS + XHTTP 的 Clash Meta / Mihomo 订阅转换，将 Xray `extra.downloadSettings` 转为原生 `xhttp-opts.download-settings`，转换下行地址、端口、传输参数及 TLS / Reality 设置。
+- 转换常用 XHTTP `extra` 参数和 XMUX；保留数值范围、`false`、零值以及空对象的正确 YAML 类型。
+- 显式处理独立下行的默认值，避免误继承上行的 Reality、ECH、SNI、证书校验、请求头或 XMUX 配置。
+- 对格式错误或无法等价转换的 XHTTP 节点，仅从 Mihomo 订阅中跳过并记录节点 ID 和原因，不降级为普通 XHTTP，不影响其他有效节点及其策略组。
+- 保持面板保存及节点下发的 Xray JSON 格式、通用分享链接和其他客户端转换逻辑；不新增数据库迁移，不改默认订阅模板。
+- 增加订阅转换、保存读取、节点下发和客户端兼容测试；补充配置示例及边界说明。
+
 ## 1.1.0 — 2026-11-01
 
 - VLESS / Trojan 在 TCP/RAW + TLS / Reality 下增加可选 Fallback 输入，位于安全性设置与传输协议之间；无效输入静默清空。
