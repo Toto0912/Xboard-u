@@ -66,10 +66,10 @@ class CertificateConfigTest extends TestCase
             'future_extension' => ['preserve' => true],
         ];
         $this->postJson($this->adminPath() . '/save', $payload)->assertOk()->assertJson(['data' => true]);
-        $this->assertSame($payload['cert_config'], $node->fresh()->cert_config);
+        $this->assertJsonStringEqualsJsonString(json_encode($payload['cert_config']), json_encode($node->fresh()->cert_config));
         $reopened = $this->getJson($this->adminPath() . '/getNodes')->assertOk()->json('data.0.cert_config');
-        $this->assertSame($payload['cert_config'], $reopened);
-        $this->assertSame($payload['cert_config'], ServerService::buildNodeConfig($node->fresh())['cert_config']);
+        $this->assertJsonStringEqualsJsonString(json_encode($payload['cert_config']), json_encode($reopened));
+        $this->assertJsonStringEqualsJsonString(json_encode($payload['cert_config']), json_encode(ServerService::buildNodeConfig($node->fresh())['cert_config']));
     }
 
     public function test_existing_certificate_modes_and_unknown_fields_remain_unchanged(): void

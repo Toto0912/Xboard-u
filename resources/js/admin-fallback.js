@@ -37,3 +37,17 @@ function XboardFallbackInput({form, protocol}) {
     })
   });
 }
+
+// Both supported node kernels name the panel-managed inbound protocol + "-in".
+// Read-only display: never write this derived value into the saved form.
+function XboardInboundTag({protocol}) {
+  if (typeof protocol !== 'string' || !protocol) return null;
+  return Q.jsxs('div', {
+    className: 'flex flex-wrap items-center gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs',
+    'data-xboard-inbound-label': 'true',
+    children: [
+      Q.jsx('span', {className: 'text-muted-foreground', children: '当前节点入站标签'}),
+      Q.jsx('code', {className: 'font-mono text-foreground', 'data-xboard-inbound-tag': protocol + '-in', children: protocol + '-in'})
+    ]
+  });
+}

@@ -56,7 +56,7 @@ class ManageController extends Controller
 
     public function save(ServerSave $request)
     {
-        $params = $request->validated();
+        $params = \App\Support\CustomKernelConfig::preserveObjects($request->validated(), $request->getContent());
         if ($request->input('id')) {
             $server = Server::find($request->input('id'));
             if (!$server) {

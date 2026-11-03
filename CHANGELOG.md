@@ -1,5 +1,16 @@
 # 更新记录
 
+## v1.1.3 — 2026-11-03
+
+- 自定义路由编辑区只读显示当前节点入站标签，随协议更新。
+
+- 支持面板下发 Sing-box 原生出站，保留 type、detour、TLS、transport 等顶层及嵌套字段；保留 Xray 原生 streamSettings、proxySettings、mux 等字段。
+- 兼容旧 protocol/settings/proxy_tag 出站格式；Sing-box 链式出站转换为原生 detour。
+- 原生路由按实际内核检查格式和出站引用，检查出站依赖循环，错误配置明确拒绝；原生规则不做跨内核转换。
+- 面板保存、重开、REST / WebSocket 下发保留空对象 {}，增加格式提示和原生配置文档；不新增数据库迁移。
+- 面板与节点端版本统一为 v1.1.3，内核版本不变。
+
+
 ## 1.1.2 — 2026-11-02
 
 - Fallback 统一采用 Xray 原生协议层语义，Reality 不再把回落输入当作 HTTPS 伪装目标覆盖，保留原 Reality 配置。

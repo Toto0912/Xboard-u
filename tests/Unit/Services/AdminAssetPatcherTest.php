@@ -24,6 +24,8 @@ class AdminAssetPatcherTest extends TestCase
         }
         $this->assertSame($source, file_get_contents($path));
         $this->assertStringContainsString('sing-box', $patched);
+        $this->assertStringContainsString('支持 Sing-box 原生 type 配置', $patched);
+        $this->assertStringContainsString('无匹配条件的规则可能接管全部流量', $patched);
         $this->assertStringContainsString('不覆盖 Reality 目标站', $patched);
         $this->assertStringNotContainsString('Reality 目标站，例如', $patched);
     }

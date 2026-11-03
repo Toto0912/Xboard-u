@@ -19,6 +19,13 @@ class ServerSave extends FormRequest
         }
     }
 
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            \App\Support\CustomKernelConfig::validate($validator, $this->all());
+        });
+    }
+
     private const UTLS_RULES = [
         'utls.enabled' => 'nullable|boolean',
         'utls.fingerprint' => 'nullable|string',
