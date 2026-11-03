@@ -189,5 +189,5 @@ return [
     | The only modification by laravel config
     |
     */
-    'version' => '1.1.3-xboard-u'
+    'version' => '2.0.0-xboard-u'
 ];

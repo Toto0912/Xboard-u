@@ -1,8 +1,19 @@
 // Inserted into the pinned admin module by AdminAssetPatcher. Reuses that
 // module's React, react-hook-form and UI components (no second React runtime).
 function XboardFallbackInput({form, protocol}) {
+  const {cdn, side} = H.useContext(XboardConnectionContext());
+  if (cdn?.enabled && side !== 'server') {
+    const settings = cdn.server.protocol_settings;
+    const fallback = XboardFallbackAllowed(protocol, settings) ? settings.xray_fallback : '';
+    return Q.jsxs('div', {className: 'space-y-1 text-xs', children: [
+      Q.jsx('label', {children: 'Fallback（服务端）'}),
+      Q.jsx(u8e, {value: fallback || '', readOnly: true, disabled: true, 'aria-label': 'Fallback（服务端）'}),
+      Q.jsx('p', {children: '已启用客户端与服务端分离，请在“高级设置 → CDN套用”中修改。'})
+    ]});
+  }
   const tls = Number(form.watch('tls'));
-  const network = form.watch('network') || 'tcp';
+  const rawNetwork = form.watch('network') || 'tcp';
+  const network = ({raw: 'tcp', splithttp: 'xhttp', h2: 'http'})[rawNetwork] || rawNetwork;
   if (![1, 2].includes(tls) || !['tcp', 'raw'].includes(network)) return null;
   const encryption = form.watch('encryption');
   const incompatible = protocol === 'vless' && encryption?.enabled &&

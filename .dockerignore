@@ -39,3 +39,4 @@ storage/laravels-timer-process.pid
 !.env.example
 /public/assets/admin/assets/*.xboard-u-*.js
 /public/assets/xboard-u/admin-entry.json
+/public/assets/xboard-u/admin-editor-*.css

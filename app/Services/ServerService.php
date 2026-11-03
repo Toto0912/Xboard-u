@@ -76,8 +76,8 @@ class ServerService
             }
             $server->password = $server->generateServerPassword($user);
             $server->rate = $server->getCurrentRate();
-            return $server;
-        })->toArray();
+            return \App\Support\ServerTransport::clientPayload($server->toArray());
+        })->all();
 
         return $servers;
     }
@@ -251,16 +251,17 @@ class ServerService
     public static function buildNodeConfig(Server $node): array
     {
         $nodeType = $node->type;
-        $protocolSettings = $node->protocol_settings;
-        $serverPort = $node->server_port;
-        $host = $node->host;
+        $connection = $node->serverConnection();
+        $protocolSettings = $connection['protocol_settings'];
+        $serverPort = $connection['server_port'];
+        $host = $connection['host'];
 
         $baseConfig = [
             'protocol' => $nodeType,
             'listen_ip' => '0.0.0.0',
             'server_port' => (int) $serverPort,
             'network' => data_get($protocolSettings, 'network'),
-            'networkSettings' => data_get($protocolSettings, 'network_settings') ?: null,
+            'networkSettings' => \App\Support\ServerTransport::nodeParameters($protocolSettings, (bool) ($node->cdn_settings['enabled'] ?? false)),
         ];
 
         $response = match ($nodeType) {

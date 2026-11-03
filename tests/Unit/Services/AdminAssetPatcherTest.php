@@ -13,15 +13,17 @@ class AdminAssetPatcherTest extends TestCase
         $manifest = json_decode(file_get_contents($root . '/public/assets/admin/manifest.json'), true);
         $path = $root . '/public/assets/admin/' . $manifest['index.html']['file'];
         $source = file_get_contents($path);
-        $patched = AdminAssetPatcher::patch($source, file_get_contents($root . '/resources/js/admin-fallback.js'));
+        $patched = AdminAssetPatcher::patch($source, AdminAssetPatcher::readComponents($root));
         $this->assertSame(2, substr_count($patched, 'xray_fallback:cy().optional().default("")'));
         foreach (['vless', 'trojan'] as $protocol) {
             $field = strpos($patched, 'Q.jsx(XboardFallbackInput,{form:e,protocol:"' . $protocol . '"})');
-            $network = strpos($patched, 'dynamic_form.' . $protocol . '.network.label');
+            $network = strpos($patched, 'Q.jsx(XboardTransportEditor,{form:e,protocol:"' . $protocol . '"})');
             $this->assertNotFalse($field);
             $this->assertGreaterThan($field, $network);
             $this->assertLessThan(350, $network - $field);
         }
+        $this->assertStringContainsString('value:"cdn",children:Q.jsx(XboardEditorTab', $patched);
+        $this->assertSame(3, substr_count($patched, 'Q.jsx(XboardTransportEditor,'));
         $this->assertSame($source, file_get_contents($path));
         $this->assertStringContainsString('sing-box', $patched);
         $this->assertStringContainsString('支持 Sing-box 原生 type 配置', $patched);

@@ -46,6 +46,8 @@ abstract class AbstractProtocol
      */
     protected $allowedProtocols = [];
 
+    protected bool $supportsNativeSingBoxTransport = false;
+
     /**
      * 构造函数
      *
@@ -63,17 +65,27 @@ abstract class AbstractProtocol
         $this->clientVersion = $clientVersion;
         $this->userAgent = $userAgent;
         $this->protocolRequirements = $this->normalizeProtocolRequirements($this->protocolRequirements);
-        $this->servers = HookManager::filter('protocol.servers.filtered', $this->filterServersByVersion());
-        // This field is a node-server setting, not a client outbound option.
-        $this->servers = collect($this->servers)->map(function ($server) {
-            if ($server instanceof \Illuminate\Contracts\Support\Arrayable) {
-                $server = $server->toArray();
-            }
-            if (is_array($server) && is_array($server['protocol_settings'] ?? null)) {
-                unset($server['protocol_settings']['xray_fallback']);
-            }
-            return $server;
-        })->all();
+        $this->servers = collect($this->servers)->map(self::clientPayload(...))->all();
+        $this->servers = collect(HookManager::filter('protocol.servers.filtered', $this->filterServersByVersion()))
+            ->map(self::clientPayload(...))
+            ->filter(function ($server) {
+                if ($this->supportsNativeSingBoxTransport || !is_array($server) || !ServerTransport::requiresNativeSingBoxTransport($server)) {
+                    return true;
+                }
+                \Illuminate\Support\Facades\Log::warning('Skipped node with unsupported Sing-box transport fields', [
+                    'node_id' => $server['id'] ?? null, 'client' => $this->clientName,
+                ]);
+                return false;
+            })
+            ->values()->all();
+    }
+
+    private static function clientPayload($server)
+    {
+        if ($server instanceof \Illuminate\Contracts\Support\Arrayable) {
+            $server = $server->toArray();
+        }
+        return is_array($server) ? ServerTransport::clientPayload($server) : $server;
     }
 
     /**

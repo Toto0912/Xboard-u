@@ -80,6 +80,9 @@
     <script src="/assets/admin/locales/zh-CN.js"></script>
     <script src="/assets/admin/locales/ko-KR.js"></script>
   @endif
+  @if(!empty($adminEntries['__editor_css']) && preg_match('/\Aadmin-editor-[a-f0-9]{12}\.css\z/D', $adminEntries['__editor_css']))
+    <link rel="stylesheet" href="/assets/xboard-u/{{ $adminEntries['__editor_css'] }}" />
+  @endif
   <script src="/assets/xboard-u/admin.js?v=0.1.0"></script>
 </head>
 

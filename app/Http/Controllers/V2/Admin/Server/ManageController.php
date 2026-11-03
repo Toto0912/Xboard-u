@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\ServerSave;
 use App\Models\Server;
 use App\Models\ServerGroup;
 use App\Services\ServerService;
+use App\Support\ServerTransport;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,11 +20,17 @@ class ManageController extends Controller
         $servers = ServerService::getAllServers()->map(function ($item) {
             $item['groups'] = ServerGroup::whereIn('id', $item['group_ids'] ?? [])->get(['name', 'id']);
             $item['parent'] = $item->parent;
-            $data = $item->toArray();
+            $data = $item->makeVisible('cdn_settings')->toArray();
             // Nested form fields must start on a JSON object. Named properties
             // assigned to [] by react-hook-form disappear during JSON.stringify.
             // Convert after toArray(), otherwise the model's array cast restores [].
             $data['cert_config'] = (object) ($data['cert_config'] ?? []);
+            $data['protocol_settings'] = ServerTransport::forEditor($data['protocol_settings']);
+            if (isset($data['cdn_settings']['server'])) {
+                $data['cdn_settings']['server']['protocol_settings'] = ServerTransport::forEditor(
+                    $data['cdn_settings']['server']['protocol_settings']
+                );
+            }
             return $data;
         });
         return $this->success($servers);
@@ -57,6 +64,14 @@ class ManageController extends Controller
     public function save(ServerSave $request)
     {
         $params = \App\Support\CustomKernelConfig::preserveObjects($request->validated(), $request->getContent());
+        if (isset($params['cdn_settings']['server'])) {
+            $params['cdn_settings']['server']['protocol_settings'] = Server::normalizeProtocolSettings(
+                $params['type'], $request->input('cdn_settings.server.protocol_settings')
+            );
+        }
+        if (isset($params['cdn_settings'])) {
+            $params['cdn_settings']['enabled'] = (bool) ($params['cdn_settings']['enabled'] ?? false);
+        }
         if ($request->input('id')) {
             $server = Server::find($request->input('id'));
             if (!$server) {

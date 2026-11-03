@@ -5,6 +5,7 @@ namespace App\Http\Requests\Admin;
 
 use App\Models\Server;
 use App\Support\ServerFallback;
+use App\Support\ServerTransport;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ServerSave extends FormRequest
@@ -14,15 +15,123 @@ class ServerSave extends FormRequest
         $settings = $this->input('protocol_settings');
         if (is_array($settings)) {
             $type = $this->input('type');
+            $cdn = $this->input('cdn_settings');
+            $old = $this->existingNode()?->cdn_settings;
+            if (!$this->has('cdn_settings') && $old !== null) {
+                $cdn = $old;
+                $this->merge(['cdn_settings' => $cdn]);
+            }
+
+            if (in_array(data_get($cdn, 'enabled'), [true, 1, '1'], true)) {
+                $origin = data_get($cdn, 'server.protocol_settings');
+                if (is_array($origin) && !isset($old['server']) && !array_key_exists('xray_fallback', $origin)) {
+                    $cdn['server']['protocol_settings']['xray_fallback'] = $settings['xray_fallback'] ?? '';
+                    $this->merge(['cdn_settings' => $cdn]);
+                }
+                $settings['xray_fallback'] = '';
+            } elseif (($old['enabled'] ?? false) && $type === ($old['type'] ?? $type)) {
+                $settings['xray_fallback'] = data_get($cdn, 'server.protocol_settings.xray_fallback',
+                    data_get($old, 'server.protocol_settings.xray_fallback', ''));
+            }
             $settings['xray_fallback'] = ServerFallback::forNode(is_string($type) ? $type : null, $settings);
             $this->merge(['protocol_settings' => $settings]);
         }
+    }
+
+    private ?Server $nodeBeforeSave = null;
+
+    private function existingNode(): ?Server
+    {
+        $id = $this->input('id');
+        return is_scalar($id) && ctype_digit((string) $id)
+            ? $this->nodeBeforeSave ??= Server::find($id)
+            : null;
     }
 
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
             \App\Support\CustomKernelConfig::validate($validator, $this->all());
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $cdn = $this->input('cdn_settings');
+            $enabled = in_array(data_get($cdn, 'enabled'), [true, 1, '1'], true);
+            if ($message = ServerTransport::error($this->input('protocol_settings', []), !$enabled, !$enabled)) {
+                $validator->errors()->add('protocol_settings.network_settings', $message);
+            }
+            if (!isset($cdn['server'])) {
+                return;
+            }
+
+            $type = $this->input('type');
+            if ($cdn['type'] !== $type) {
+                $validator->errors()->add('cdn_settings.type', '协议已变更，请重新初始化 CDN 服务端配置。');
+                return;
+            }
+
+            $ports = array_map('intval', explode('-', (string) $cdn['server']['port']));
+            if (min($ports) < 1 || max($ports) > 65535 || $ports[0] > end($ports)) {
+                $validator->errors()->add('cdn_settings.server.port', '服务端连接端口或端口范围必须在 1 到 65535 之间。');
+            }
+            if (!$enabled) {
+                return;
+            }
+
+            if ($message = ServerTransport::error($cdn['server']['protocol_settings'], true)) {
+                $validator->errors()->add('cdn_settings.server.protocol_settings.network_settings', $message);
+            }
+
+            $client = Server::normalizeProtocolSettings($type, $this->input('protocol_settings', []));
+            $server = Server::normalizeProtocolSettings($type, $cdn['server']['protocol_settings']);
+            foreach (match ($type) {
+                'shadowsocks' => ['cipher'],
+                'hysteria' => ['version', 'obfs.open', 'obfs.type', 'obfs.password'],
+                'tuic' => ['version'],
+                default => [],
+            } as $field) {
+                if (data_get($client, $field) !== data_get($server, $field)) {
+                    $validator->errors()->add('cdn_settings.server.protocol_settings.' . $field, '两侧协议认证参数必须匹配。');
+                }
+            }
+
+            $clientTlsModes = match ($type) {
+                'vless', 'trojan' => [0, 1, 2],
+                'vmess', 'socks', 'http', 'naive' => [0, 1],
+                default => null,
+            };
+            if ($clientTlsModes && !in_array(data_get($client, 'tls'), $clientTlsModes, true)) {
+                $validator->errors()->add('protocol_settings.tls', '该协议不支持所选客户端安全性。');
+            }
+            if ($clientTlsModes && !in_array(data_get($server, 'tls'), $clientTlsModes, true)) {
+                $validator->errors()->add('cdn_settings.server.protocol_settings.tls', '该协议不支持所选服务端安全性。');
+            }
+            if ($type === 'trojan' && !in_array(data_get($server, 'tls'), [1, 2], true)) {
+                $validator->errors()->add('cdn_settings.server.protocol_settings.tls', '配套 Trojan 服务端需要 TLS 或 Reality。');
+            }
+            if (data_get($server, 'tls') === 2 && !data_get($server, 'reality_settings.private_key')) {
+                $validator->errors()->add('cdn_settings.server.protocol_settings.reality_settings.private_key', '服务端启用 Reality 时必须配置私钥。');
+            }
+            if (data_get($client, 'tls') === 2 && data_get($server, 'tls') === 2) {
+                $private = base64_decode(strtr((string) data_get($server, 'reality_settings.private_key'), '-_', '+/'), true);
+                $public = base64_decode(strtr((string) data_get($client, 'reality_settings.public_key'), '-_', '+/'), true);
+                if ($private === false || strlen($private) !== 32 || $public === false || strlen($public) !== 32
+                    || !hash_equals($public, \ParagonIE_Sodium_Compat::crypto_scalarmult_base($private))) {
+                    $validator->errors()->add('cdn_settings.server.protocol_settings.reality_settings.private_key', '服务端 Reality 私钥必须与客户端公钥对应。');
+                }
+                if (strcasecmp((string) data_get($client, 'reality_settings.short_id'), (string) data_get($server, 'reality_settings.short_id')) !== 0) {
+                    $validator->errors()->add('cdn_settings.server.protocol_settings.reality_settings.short_id', '两侧 Reality Short ID 必须匹配。');
+                }
+            }
+            if ($type === 'vless') {
+                $clientEncryption = (bool) data_get($client, 'encryption.enabled');
+                $serverEncryption = (bool) data_get($server, 'encryption.enabled');
+                if ($clientEncryption !== $serverEncryption
+                    || ($clientEncryption && (!data_get($client, 'encryption.encryption') || !data_get($server, 'encryption.decryption')))) {
+                    $validator->errors()->add('cdn_settings.server.protocol_settings.encryption', '两侧 VLESS 额外加密启用状态及认证字段必须对应。');
+                }
+            }
         });
     }
 
@@ -54,6 +163,7 @@ class ServerSave extends FormRequest
         'reality_settings.allow_insecure' => 'nullable|boolean',
         'reality_settings.server_name' => 'nullable|string',
         'reality_settings.server_port' => 'nullable|integer',
+        'reality_settings.dest' => 'nullable|string',
         'reality_settings.public_key' => 'nullable|string',
         'reality_settings.private_key' => 'nullable|string',
         'reality_settings.short_id' => 'nullable|string',
@@ -250,10 +360,32 @@ class ServerSave extends FormRequest
     {
         $type = $this->input('type');
         $rules = $this->getBaseRules();
-        $protocolRules = $this->getProtocolRules($type);
+        $protocolRules = $this->getProtocolRules(is_string($type) ? $type : '');
+        $cdnEnabled = in_array($this->input('cdn_settings.enabled'), [true, 1, '1'], true);
+        $rules += [
+            'cdn_settings' => 'nullable|array:enabled,type,server',
+            'cdn_settings.enabled' => 'required_with:cdn_settings|boolean',
+            'cdn_settings.type' => 'required_with:cdn_settings.server|string|in:' . implode(',', Server::VALID_TYPES),
+            'cdn_settings.server' => ($cdnEnabled ? 'required' : 'nullable') . '|array:host,port,server_port,protocol_settings',
+            'cdn_settings.server.host' => 'required_with:cdn_settings.server|string|max:255',
+            'cdn_settings.server.port' => 'required_with:cdn_settings.server|regex:/^\d{1,5}(-\d{1,5})?$/',
+            'cdn_settings.server.server_port' => 'required_with:cdn_settings.server|integer|between:1,65535',
+            'cdn_settings.server.protocol_settings' => 'required_with:cdn_settings.server|array',
+        ];
+        if ($this->input('cdn_settings.server') !== null) {
+            $rules['cdn_settings.server.protocol_settings'] = 'present|array';
+        }
 
+        $protocolRules += [
+            'target_kernel' => 'nullable|in:xray,singbox',
+            'transport_draft_invalid' => 'nullable|boolean',
+        ];
         foreach ($protocolRules as $field => $rule) {
             $rules['protocol_settings.' . $field] = $rule;
+            if ($this->input('cdn_settings.server') !== null) {
+                $rules['cdn_settings.server.protocol_settings.' . $field] = $cdnEnabled
+                    ? $rule : str_replace('required', 'nullable', $rule);
+            }
         }
 
         return $rules;

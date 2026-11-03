@@ -77,6 +77,13 @@ class TrojanTidalabController extends Controller
         if ($server->type !== 'trojan') {
             return $this->fail([400, '节点不存在']);
         }
+        $settings = $server->serverConnection()['protocol_settings'];
+        if (($server->cdn_settings['enabled'] ?? false) && (
+            (int) ($settings['tls'] ?? 1) !== 1
+            || !in_array($settings['network'] ?? 'tcp', ['tcp', 'raw'], true)
+        )) {
+            return $this->fail([422, 'Trojan 旧版接口仅支持 TLS/TCP，请使用通用节点配置接口。']);
+        }
         $request->validate([
             'node_id' => 'required',
             'local_port' => 'required'
@@ -96,10 +103,12 @@ class TrojanTidalabController extends Controller
 
     private function getTrojanConfig($server, int $localPort)
     {
-        $protocolSettings = $server->protocol_settings;
+        $connection = $server->serverConnection();
+        $protocolSettings = $connection['protocol_settings'];
         $json = json_decode(self::TROJAN_CONFIG);
-        $json->local_port = $server->server_port;
-        $json->ssl->sni = data_get($protocolSettings, 'server_name', $server->host);
+        $json->local_port = $connection['server_port'];
+        $json->ssl->sni = data_get($protocolSettings, 'tls_settings.server_name')
+            ?? data_get($protocolSettings, 'server_name', $connection['host']);
         $json->ssl->cert = "/root/.cert/server.crt";
         $json->ssl->key = "/root/.cert/server.key";
         $json->api->api_port = $localPort;

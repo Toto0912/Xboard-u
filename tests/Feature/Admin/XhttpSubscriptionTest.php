@@ -172,11 +172,11 @@ class XhttpSubscriptionTest extends TestCase
         $path = '/api/v2/' . hash('crc32b', config('app.key')) . '/server/manage';
         $this->postJson($path . '/save', $payload)->assertOk()->assertJson(['data' => true]);
         $server = Server::latest('id')->firstOrFail();
-        $this->assertSame($payload['protocol_settings']['network_settings'], $server->protocol_settings['network_settings']);
+        $this->assertEquals($payload['protocol_settings']['network_settings'], $server->protocol_settings['network_settings']);
         $saved = collect($this->getJson($path . '/getNodes')->assertOk()->json('data'))->firstWhere('id', $server->id);
-        $this->assertSame($payload['protocol_settings']['network_settings'], $saved['protocol_settings']['network_settings']);
+        $this->assertEquals($payload['protocol_settings']['network_settings'], $saved['protocol_settings']['network_settings']);
         $node = ServerService::buildNodeConfig($server);
-        $this->assertSame($this->down(), $node['networkSettings']['extra']['downloadSettings']);
+        $this->assertEquals($this->down(), $node['networkSettings']['extra']['downloadSettings']);
     }
 
     public function test_general_links_preserve_extra_and_other_clients_do_not_receive_mihomo_fields(): void

@@ -9,6 +9,8 @@ use Log;
 
 class SingBox extends AbstractProtocol
 {
+    protected bool $supportsNativeSingBoxTransport = true;
+
     public $flags = ['sing-box', 'hiddify', 'sfm'];
     public $allowedProtocols = [
         Server::TYPE_SHADOWSOCKS,
@@ -152,7 +154,7 @@ class SingBox extends AbstractProtocol
             }
             if (
                 $item['type'] === Server::TYPE_VLESS
-                && in_array(data_get($protocol_settings, 'network'), ['tcp', 'ws', 'grpc', 'http', 'quic', 'httpupgrade'])
+                && in_array(data_get($protocol_settings, 'network'), ['tcp', 'ws', 'grpc', 'http', 'h2', 'quic', 'httpupgrade'])
             ) {
                 $vlessConfig = $this->buildVless($this->user['uuid'], $item);
                 $proxies[] = $vlessConfig;
@@ -855,24 +857,31 @@ class SingBox extends AbstractProtocol
             'ws' => [
                 'type' => 'ws',
                 'path' => data_get($protocol_settings, 'network_settings.path'),
-                'headers' => ($host = data_get($protocol_settings, 'network_settings.headers.Host')) ? ['Host' => $host] : null,
-                'max_early_data' => 0,
-                // 'early_data_header_name' => 'Sec-WebSocket-Protocol'
+                'headers' => data_get($protocol_settings, 'network_settings.headers') ?: null,
+                'max_early_data' => data_get($protocol_settings, 'network_settings.max_early_data', 0),
+                'early_data_header_name' => data_get($protocol_settings, 'network_settings.early_data_header_name'),
             ],
             'grpc' => [
                 'type' => 'grpc',
-                'service_name' => data_get($protocol_settings, 'network_settings.serviceName')
+                'service_name' => data_get($protocol_settings, 'network_settings.serviceName'),
+                'idle_timeout' => data_get($protocol_settings, 'network_settings.idle_timeout'),
+                'ping_timeout' => data_get($protocol_settings, 'network_settings.ping_timeout'),
+                'permit_without_stream' => data_get($protocol_settings, 'network_settings.permit_without_stream'),
             ],
-            'h2' => [
+            'http', 'h2' => [
                 'type' => 'http',
                 'host' => data_get($protocol_settings, 'network_settings.host'),
-                'path' => data_get($protocol_settings, 'network_settings.path')
+                'path' => data_get($protocol_settings, 'network_settings.path'),
+                'method' => data_get($protocol_settings, 'network_settings.method'),
+                'headers' => data_get($protocol_settings, 'network_settings.headers') ?: null,
+                'idle_timeout' => data_get($protocol_settings, 'network_settings.idle_timeout'),
+                'ping_timeout' => data_get($protocol_settings, 'network_settings.ping_timeout'),
             ],
             'httpupgrade' => [
                 'type' => 'httpupgrade',
                 'path' => data_get($protocol_settings, 'network_settings.path'),
                 'host' => data_get($protocol_settings, 'network_settings.host', $server['host']),
-                'headers' => data_get($protocol_settings, 'network_settings.headers')
+                'headers' => data_get($protocol_settings, 'network_settings.headers') ?: null,
             ],
             'quic' => ['type' => 'quic'],
             default => null

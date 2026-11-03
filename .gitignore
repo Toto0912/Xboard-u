@@ -34,3 +34,4 @@ compose.split.yaml
 .scribe
 /public/assets/admin/assets/*.xboard-u-*.js
 /public/assets/xboard-u/admin-entry.json
+/public/assets/xboard-u/admin-editor-*.css

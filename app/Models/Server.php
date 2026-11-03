@@ -114,11 +114,14 @@ class Server extends Model
     protected $table = 'v2_server';
 
     protected $guarded = ['id'];
+
+    protected $hidden = ['cdn_settings'];
     protected $casts = [
         'group_ids' => 'array',
         'route_ids' => 'array',
         'tags' => 'array',
         'protocol_settings' => 'array',
+        'cdn_settings' => 'array',
         'custom_outbounds' => \App\Casts\NativeConfigArray::class,
         'custom_routes' => \App\Casts\NativeConfigArray::class,
         'cert_config' => 'array',
@@ -164,6 +167,7 @@ class Server extends Model
             'fields' => [
                 'server_name' => ['type' => 'string', 'default' => null],
                 'server_port' => ['type' => 'string', 'default' => null],
+                'dest' => ['type' => 'string', 'default' => null],
                 'public_key' => ['type' => 'string', 'default' => null],
                 'private_key' => ['type' => 'string', 'default' => null],
                 'short_id' => ['type' => 'string', 'default' => null],
@@ -326,7 +330,7 @@ class Server extends Model
         ]
     ];
 
-    private function castValueWithConfig($value, array $config)
+    private static function castValueWithConfig($value, array $config)
     {
         if ($value === null && $config['type'] !== 'object') {
             return $config['default'] ?? null;
@@ -338,30 +342,35 @@ class Server extends Model
             'string' => (string) $value,
             'array' => (array) $value,
             'object' => is_array($value) ?
-            $this->castSettingsWithConfig($value, $config['fields']) :
+            self::castSettingsWithConfig($value, $config['fields']) :
             $config['default'] ?? null,
             default => $value
         };
     }
 
-    private function castSettingsWithConfig(array $settings, array $configs): array
+    private static function castSettingsWithConfig(array $settings, array $configs): array
     {
         $result = [];
         foreach ($configs as $key => $config) {
             $value = $settings[$key] ?? null;
-            $result[$key] = $this->castValueWithConfig($value, $config);
+            $result[$key] = self::castValueWithConfig($value, $config);
         }
         return $result;
     }
 
     public function getProtocolSettingsAttribute($value)
     {
-        $settings = json_decode($value, true) ?? [];
-        $configs = self::PROTOCOL_CONFIGURATIONS[$this->type] ?? [];
+        return self::normalizeProtocolSettings($this->type, json_decode($value, true) ?? []);
+    }
+
+    public static function normalizeProtocolSettings(?string $type, array $settings): array
+    {
+        $configs = self::PROTOCOL_CONFIGURATIONS[$type] ?? [];
         if (isset($configs['xray_fallback'])) {
-            $settings['xray_fallback'] = ServerFallback::forNode($this->type, $settings);
+            $settings['xray_fallback'] = ServerFallback::forNode($type, $settings);
         }
-        return $this->castSettingsWithConfig($settings, $configs);
+        $configs['target_kernel'] = ['type' => 'string', 'default' => null];
+        return \App\Support\ServerTransport::normalize(self::castSettingsWithConfig($settings, $configs));
     }
 
     public function setProtocolSettingsAttribute($value)
@@ -370,13 +379,29 @@ class Server extends Model
             $value = json_decode($value, true);
         }
 
-        $configs = self::PROTOCOL_CONFIGURATIONS[$this->type] ?? [];
-        if (is_array($value) && isset($configs['xray_fallback'])) {
-            $value['xray_fallback'] = ServerFallback::forNode($this->type, $value);
-        }
-        $castedSettings = $this->castSettingsWithConfig($value ?? [], $configs);
+        $this->attributes['protocol_settings'] = json_encode(
+            self::normalizeProtocolSettings($this->type, $value ?? []),
+            JSON_THROW_ON_ERROR
+        );
+    }
 
-        $this->attributes['protocol_settings'] = json_encode($castedSettings);
+    public function serverConnection(): array
+    {
+        $cdn = $this->cdn_settings;
+        if ($cdn['enabled'] ?? false) {
+            $connection = $cdn['server'];
+            $connection['protocol_settings'] = self::normalizeProtocolSettings(
+                $this->type, $connection['protocol_settings']
+            );
+            return $connection;
+        }
+
+        return [
+            'host' => $this->host,
+            'port' => $this->port,
+            'server_port' => $this->server_port,
+            'protocol_settings' => $this->protocol_settings,
+        ];
     }
 
     public function generateServerPassword(User $user): string
