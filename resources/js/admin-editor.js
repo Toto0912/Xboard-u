@@ -47,25 +47,38 @@ function XboardConnectionHeading({form}) {
   ]});
 }
 
-function XboardNodeBasicSection({children}) {
-  const fields = H.Children.toArray(children);
-  return Q.jsxs('div', {className:'xb-basic-section', children:[fields[0],
-    Q.jsxs('details',{className:'xb-secondary-details',children:[
-      Q.jsxs('summary',{children:[Q.jsx('span',{children:'更多节点属性'}),
-        Q.jsx('small',{children:'动态倍率 · 流量限制 · 标签 · 权限组'})]}),
-      Q.jsx('div',{className:'xb-optional-fields',children:fields.slice(1)})
-    ]})
+function XboardCollapsibleGroup({title, hint, fields, className, fieldsClassName}) {
+  return Q.jsxs('details',{className:'xb-secondary-details'+(className?' '+className:''),children:[
+    Q.jsxs('summary',{children:[Q.jsx('span',{children:title}),Q.jsx('small',{children:hint})]}),
+    Q.jsx('div',{className:fieldsClassName,children:fields})
   ]});
+}
+
+function XboardNodeBasicSection({children, extra, className}) {
+  return Q.jsxs('div',{className: className || 'xb-basic-section',
+    children:[...H.Children.toArray(children), extra]});
 }
 
 function XboardNodeEditorBody({children, className}) {
   const fields = H.Children.toArray(children);
-  return Q.jsxs('div',{className,children:[...fields.slice(0,-3),
-    Q.jsxs('details',{className:'xb-secondary-details xb-assignment-details',children:[
-      Q.jsxs('summary',{children:[Q.jsx('span',{children:'归属与部署'}),
-        Q.jsx('small',{children:'父级节点 · 路由组 · 绑定服务器'})]}),
-      Q.jsx('div',{className:'xb-assignment-fields',children:fields.slice(-3)})
-    ]})
+  const fieldIndex = name => fields.findIndex(field => H.isValidElement(field) &&
+    field.props && field.props.name === name);
+  // 可选字段（动态倍率、流量限制、自定义节点 ID、标签、权限组）在原始表单里是
+  // 节点编辑容器的同级子节点，只有按字段名找出区间才能整体收进折叠面板。
+  const groupStart = fieldIndex('rate_time_enable');
+  const groupEnd = fieldIndex('group_ids');
+  // 只有基础信息块可被克隆挂载时才收拢，避免上游结构变化时字段被整段丢弃。
+  const grouped = groupStart > -1 && groupEnd > groupStart && H.isValidElement(fields[0]);
+  const basic = grouped ? H.cloneElement(fields[0],{extra:Q.jsx(XboardCollapsibleGroup,{
+    title:'更多节点属性',hint:'动态倍率 · 流量限制 · 标签 · 权限组',fieldsClassName:'xb-optional-fields',
+    fields:fields.slice(groupStart,groupEnd + 1)})}) : fields[0];
+  return Q.jsxs('div',{className,children:[
+    basic,
+    ...fields.slice(1, grouped ? groupStart : fields.length - 3),
+    ...fields.slice(grouped ? groupEnd + 1 : fields.length - 3, fields.length - 3),
+    Q.jsx(XboardCollapsibleGroup,{title:'归属与部署',hint:'父级节点 · 路由组 · 绑定服务器',
+      className:'xb-assignment-details',fieldsClassName:'xb-assignment-fields',
+      fields:fields.slice(-3)})
   ]});
 }
 

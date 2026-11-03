@@ -118,9 +118,11 @@ body:has(:is(.xb-advanced-dialog,[role=dialog]:has(.xb-advanced-head))) [data-ra
 .xb-secondary-details>summary small{font-size:10px;color:var(--xb-muted)}
 .xb-secondary-details[open]>summary{border-bottom:1px solid var(--xb-border)}
 .xb-secondary-details:not([open])>.xb-optional-fields,.xb-secondary-details:not([open])>.xb-assignment-fields{display:none!important}
-.xb-optional-fields,.xb-assignment-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;padding:19px 16px}
+.xb-optional-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:18px 16px}
+.xb-assignment-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;padding:19px 16px}
+.xb-optional-fields>*,.xb-assignment-fields>*{min-width:0}
 .xb-optional-fields>*+*,.xb-assignment-fields>*+*{margin-top:0!important}
-.xb-optional-fields>div:first-child,.xb-optional-fields>div:last-child,.xb-assignment-fields>div:last-child{grid-column:1/-1}
+.xb-assignment-fields>div:last-child{grid-column:1/-1}
 .xb-assignment-details{margin-top:22px}
 .xb-connection-section{padding:0}
 .xb-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
