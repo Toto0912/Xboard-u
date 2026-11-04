@@ -2,7 +2,7 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前版本：**v2.0.0**。
+当前版本：**v2.0.1**。
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
