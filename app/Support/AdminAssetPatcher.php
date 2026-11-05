@@ -42,7 +42,7 @@ final class AdminAssetPatcher
             if (substr_count($source, $anchor) !== 1) {
                 throw new RuntimeException('Unexpected custom configuration editor anchor.');
             }
-            $source = str_replace($anchor, 'Q.jsx("p",{className:"text-xs text-muted-foreground",children:' . json_encode($hint, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . '}),' . $anchor, $source);
+            $source = str_replace($anchor, 'Q.jsx("p",{className:"text-xs text-muted-foreground",children:XboardT(' . json_encode($hint, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . ')}),' . $anchor, $source);
         }
         // The advanced form is protocol-specific and does not retain a type
         // field. Pass the outer editor's selected protocol explicitly.
@@ -76,11 +76,11 @@ final class AdminAssetPatcher
             'gridTemplateColumns:`repeat(${2+(l?1:0)+(n?1:0)}, minmax(0, 1fr))`'
                 => 'gridTemplateColumns:`repeat(${3+(l?1:0)+(n?1:0)}, minmax(92px, 1fr))`,display:"grid",justifyContent:"start",overflowX:"auto"',
             'children:[l&&Q.jsx(ow,{value:"cert"'
-                => 'children:[Q.jsx(ow,{value:"cdn",children:"CDN套用"}),l&&Q.jsx(ow,{value:"cert"',
+                => 'children:[Q.jsx(ow,{value:"cdn",children:XboardT("CDN套用")}),l&&Q.jsx(ow,{value:"cert"',
             'max-h-[60vh] min-h-[350px] overflow-y-auto px-6 py-4",children:[Q.jsx(aw'
                 => 'min-h-0 overflow-y-auto px-6 py-4",style:{maxHeight:"52dvh"},children:[Q.jsx(aw,{value:"cdn",forceMount:true,hidden:o!=="cdn",children:r&&Q.jsx(XboardCdnFields,{form:e,protocol:inboundProtocol})}),Q.jsx(aw',
             'const t=x.getValues(),n=parseFloat(t.transfer_enable_gb'
-                => 'const t=x.getValues();if(t.protocol_settings?.transport_draft_invalid)return gE.error("请先修正传输 JSON。");const n=parseFloat(t.transfer_enable_gb',
+                => 'const t=x.getValues();if(t.protocol_settings?.transport_draft_invalid)return gE.error(XboardT("请先修正传输 JSON。"));const n=parseFloat(t.transfer_enable_gb',
             'return!t})()&&s(!1)'
                 => 'return!t})()&&XboardCommitAdvanced(outer,e,inboundProtocol,customTouched)&&s(!1)',
             'custom_routes:gy(hy()).default([]),protocol_settings:'
@@ -90,7 +90,7 @@ final class AdminAssetPatcher
             'let r=n;if(i?.schema)'
                 => 'let r=n;if(!XboardCanChangeProtocol(x,t))return;if(i?.schema)',
             'r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L})'
-                => 'x.watch("cdn_settings")?.enabled&&Q.jsx("p",{className:"text-xs text-muted-foreground",children:"节点地址和连接端口供客户端连接。服务端监听端口在高级设置 → CDN套用中修改。"}),r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L,cdn:x.watch("cdn_settings")})',
+                => 'x.watch("cdn_settings")?.enabled&&Q.jsx("p",{className:"text-xs text-muted-foreground",children:XboardT("节点地址和连接端口供客户端连接。服务端监听端口在高级设置 → CDN套用中修改。")}),r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L,cdn:x.watch("cdn_settings")})',
             'o5t=({serverType:e,value:t,onChange:n})'
                 => 'o5t=({serverType:e,value:t,onChange:n,cdn,side})',
             'Q.jsx(c,{form:l,t:i})'
@@ -98,11 +98,11 @@ final class AdminAssetPatcher
             'onClick:()=>{const e=t.value;e&&x.setValue("server_port",e)}'
                 => 'disabled:!!x.watch("cdn_settings")?.enabled,onClick:()=>{const e=t.value;e&&x.setValue("server_port",e)}',
             'children:e("form.submit")'
-                => 'children:"保存节点"',
+                => 'children:XboardT("保存节点")',
             'children:i("common.save","Save")'
-                => 'children:"保存"',
+                => 'children:XboardT("保存")',
             'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t'
-                => 'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?"在高级设置 → CDN套用中设置服务端端口":undefined',
+                => 'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?XboardT("在高级设置 → CDN套用中设置服务端端口"):undefined',
             'flex flex-row items-center justify-between border-t bg-muted/20 px-6 py-4 sm:space-x-0'
                 => 'flex flex-row flex-wrap items-center justify-end gap-2 border-t bg-muted/20 px-3 py-3 sm:space-x-0',
         ];
@@ -151,6 +151,13 @@ final class AdminAssetPatcher
             throw new RuntimeException('Unexpected target kernel schema anchor.');
         }
         $source = str_replace($anchor, 'a=H.useMemo(()=>o?.schema?.extend({target_kernel:cy().nullable().optional(),transport_draft_invalid:uy().optional()})||fy(hy()),[e])', $source);
+        $flowOptions = 'flowOptions:["none","xtls-rprx-direct","xtls-rprx-splice","xtls-rprx-vision"]';
+        $flowField = 'Q.jsx($y,{control:e.control,name:"flow",render:({field:e})=>Q.jsxs(Gy,{children:[Q.jsx(Zy,{className:"font-mono text-[12px] text-foreground/80",children:t("dynamic_form.vless.flow.label")}),Q.jsx(Yy,{children:Q.jsxs(yzt,{onValueChange:t=>e.onChange("none"===t?null:t),value:e.value||"none",children:[Q.jsx(Czt,{className:"font-mono text-xs",children:Q.jsx(wzt,{placeholder:t("dynamic_form.vless.flow.placeholder")})}),Q.jsx(Nzt,{children:P4t.flowOptions.map(e=>Q.jsx(Lzt,{value:e,children:e},e))})]})})]})})';
+        if (substr_count($source, $flowOptions) !== 1 || substr_count($source, $flowField) !== 1) {
+            throw new RuntimeException('Unexpected VLESS flow editor anchors.');
+        }
+        $source = str_replace($flowOptions, 'flowOptions:["none","xtls-rprx-vision"]', $source);
+        $source = str_replace($flowField, 'Q.jsx(XboardFlowInput,{form:e,t})', $source);
         // Presentation-only layout anchors; preserve the original form and handlers.
         $layoutReplacements = [
             'Q.jsxs(ptt,{className:"max-w-xl gap-0 overflow-hidden p-0 sm:rounded-2xl"' => 'Q.jsxs(ptt,{className:"xb-node-dialog max-w-xl gap-0 overflow-hidden p-0 sm:rounded-2xl"',
@@ -168,7 +175,7 @@ final class AdminAssetPatcher
             'className:"min-h-0 overflow-y-auto px-6 py-4",style:{maxHeight:"52dvh"}' => 'className:"xb-advanced-body min-h-0 overflow-y-auto px-6 py-4"',
             'Q.jsxs(ftt,{className:"border-t bg-muted/20 px-6 py-4"' => 'Q.jsxs(ftt,{className:"xb-advanced-footer border-t bg-muted/20 px-6 py-4"',
             'onClick:()=>E(l?"cert":n?"multiplex":"outbounds")' => 'onClick:()=>E("cdn")',
-            'children:[Q.jsx(ow,{value:"cdn",children:"CDN套用"}),l&&Q.jsx(ow,{value:"cert",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.advanced.tls_tab","TLS")}),n&&Q.jsx(ow,{value:"multiplex",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.advanced.multiplex_tab","Multiplex")}),Q.jsx(ow,{value:"outbounds",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.routing.outbounds_tab","Outbounds")}),Q.jsx(ow,{value:"routes",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.routing.routes_tab","Routes")})]' => 'children:[l&&Q.jsx(ow,{value:"cert",children:Q.jsx(XboardEditorTab,{name:"lock",text:"证书配置"})}),Q.jsx(ow,{value:"outbounds",children:Q.jsx(XboardEditorTab,{name:"out",text:"自定义出站"})}),Q.jsx(ow,{value:"routes",children:Q.jsx(XboardEditorTab,{name:"route",text:"自定义路由"})}),n&&Q.jsx(ow,{value:"multiplex",children:Q.jsx(XboardEditorTab,{name:"grid",text:"多路复用"})}),Q.jsx(ow,{value:"cdn",children:Q.jsx(XboardEditorTab,{name:"cloud",text:"CDN套用"})})]',
+            'children:[Q.jsx(ow,{value:"cdn",children:XboardT("CDN套用")}),l&&Q.jsx(ow,{value:"cert",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.advanced.tls_tab","TLS")}),n&&Q.jsx(ow,{value:"multiplex",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.advanced.multiplex_tab","Multiplex")}),Q.jsx(ow,{value:"outbounds",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.routing.outbounds_tab","Outbounds")}),Q.jsx(ow,{value:"routes",className:"text-xs data-[state=active]:bg-background data-[state=active]:shadow-sm",children:i("dynamic_form.routing.routes_tab","Routes")})]' => 'children:[l&&Q.jsx(ow,{value:"cert",children:Q.jsx(XboardEditorTab,{name:"lock",text:XboardT("证书配置")})}),Q.jsx(ow,{value:"outbounds",children:Q.jsx(XboardEditorTab,{name:"out",text:XboardT("自定义出站")})}),Q.jsx(ow,{value:"routes",children:Q.jsx(XboardEditorTab,{name:"route",text:XboardT("自定义路由")})}),n&&Q.jsx(ow,{value:"multiplex",children:Q.jsx(XboardEditorTab,{name:"grid",text:XboardT("多路复用")})}),Q.jsx(ow,{value:"cdn",children:Q.jsx(XboardEditorTab,{name:"cloud",text:XboardT("CDN套用")})})]',
         ];
         $layoutStart = strpos($source, 'o5t=({serverType:');
         $layoutEnd = strpos($source, 'function b5t(', $layoutStart);
@@ -190,7 +197,7 @@ final class AdminAssetPatcher
     {
         return implode("\n; ", array_map(
             fn (string $name) => file_get_contents($root . '/resources/js/' . $name . '.js'),
-            ['admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor']
+            ['admin-i18n', 'admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor']
         ));
     }
 

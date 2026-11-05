@@ -5,7 +5,7 @@ function XboardConnectionContext() {
 function XboardCanChangeProtocol(form, protocol) {
   const cdn = form.getValues('cdn_settings');
   if (!cdn?.server || cdn.type === protocol) return true;
-  if (!window.confirm('切换协议将清除当前 CDN 服务端草稿。切换后可在 CDN套用中重新初始化。')) return false;
+  if (!window.confirm(XboardT('切换协议将清除当前 CDN 服务端草稿。切换后可在 CDN套用中重新初始化。'))) return false;
   form.setValue('cdn_settings', null, {shouldDirty: true});
   return true;
 }
@@ -19,7 +19,7 @@ function XboardConnectionDraft(form, current) {
     const clientOnly = ['downloadSettings', 'xmux', 'noGRPCHeader', 'scMinPostsIntervalMs'];
     if (clientOnly.some(key => Object.hasOwn(extra, key))) {
       for (const key of clientOnly) delete extra[key];
-      gE.info('下行配置及 XHTTP 客户端专用参数留在客户端草稿。');
+      gE.info(XboardT('下行配置及 XHTTP 客户端专用参数留在客户端草稿。'));
     }
   }
   if (current) {
@@ -85,14 +85,14 @@ function XboardCdnFields({form, protocol}) {
   const [revision, bump] = H.useReducer(value => value + 1, 0);
   const write = value => form.setValue('cdn_settings', value, {shouldDirty: true});
   const toggle = enabled => {
-    if (!enabled && !window.confirm('关闭后，节点将使用外层配置。Fallback 将按外层条件带回。')) return;
+    if (!enabled && !window.confirm(XboardT('关闭后，节点将使用外层配置。Fallback 将按外层条件带回。'))) return;
     const next = server || XboardConnectionDraft(form);
     if (!enabled) {
       const fallback = next.protocol_settings.xray_fallback || '';
       const allowed = XboardFallbackAllowed(protocol, client);
       form.setValue('protocol_settings.xray_fallback', allowed ? fallback : '', {shouldDirty: true});
       if (fallback && !allowed) {
-        gE.info('外层连接参数不支持 Fallback，关闭分离后已清空外层回落目标。');
+        gE.info(XboardT('外层连接参数不支持 Fallback，关闭分离后已清空外层回落目标。'));
       }
     }
     write({enabled, type: protocol, server: next});
@@ -100,22 +100,22 @@ function XboardCdnFields({form, protocol}) {
   const change = (field, value) => form.setValue('cdn_settings.server.' + field, value, {shouldDirty: true});
   const sync = () => {
     if (client.transport_draft_invalid) {
-      gE.error('请先修正客户端传输 JSON。');
+      gE.error(XboardT('请先修正客户端传输 JSON。'));
       return;
     }
     const originKernel = server.protocol_settings.target_kernel || XboardDefaultKernel(server.protocol_settings.network, protocol);
     const differentKernel = (client.target_kernel || XboardDefaultKernel(client.network, protocol)) !== originKernel;
     const transport = differentKernel ? XboardConvertTransport(client, originKernel) : null;
     if (differentKernel && !transport) {
-      gE.error('两侧目标内核不同。请在服务端编辑器中手动转换传输参数。');
+      gE.error(XboardT('两侧目标内核不同。请在服务端编辑器中手动转换传输参数。'));
       return;
     }
-    if (!window.confirm('用当前客户端草稿覆盖服务端连接参数？保留服务端 Reality 私钥、端口与 Fallback。')) return;
+    if (!window.confirm(XboardT('用当前客户端草稿覆盖服务端连接参数？保留服务端 Reality 私钥、端口与 Fallback。'))) return;
     const next = XboardConnectionDraft(form, server);
     if (transport) Object.assign(next.protocol_settings, transport);
     if (next.protocol_settings.xray_fallback && !XboardFallbackAllowed(protocol, next.protocol_settings)) {
       next.protocol_settings.xray_fallback = '';
-      gE.info('同步后的服务端参数不支持 Fallback，已清空回落目标。');
+      gE.info(XboardT('同步后的服务端参数不支持 Fallback，已清空回落目标。'));
     }
     write({enabled: true, type: protocol, server: next});
     bump();
@@ -130,8 +130,8 @@ function XboardCdnFields({form, protocol}) {
   });
   const describe = settings => {
     const alwaysTls = ['hysteria', 'tuic', 'anytls'].includes(protocol);
-    const security = alwaysTls ? 'TLS' : protocol === 'shadowsocks' ? '协议加密' :
-      ({0: '明文', 1: 'TLS', 2: 'Reality'})[settings.tls ?? 0];
+    const security = alwaysTls ? 'TLS' : protocol === 'shadowsocks' ? XboardT('协议加密') :
+      ({0: XboardT('明文'), 1: 'TLS', 2: 'Reality'})[settings.tls ?? 0];
     const transport = settings.network || settings.transport || (protocol === 'hysteria' || protocol === 'tuic' ? 'QUIC' : 'TCP');
     return security + ' / ' + transport;
   };
@@ -154,11 +154,11 @@ function XboardCommitAdvanced(outer, draft, protocol, customTouched) {
     const server = cdn.server;
     if (!server.host?.trim() || !/^\d{1,5}(-\d{1,5})?$/.test(String(server.port)) ||
         !/^\d+$/.test(String(server.server_port)) || +server.server_port < 1 || +server.server_port > 65535) {
-      gE.error('请填写服务端节点地址、连接端口和有效的监听端口。');
+      gE.error(XboardT('请填写服务端节点地址、连接端口和有效的监听端口。'));
       return false;
     }
     if (server.protocol_settings.transport_draft_invalid) {
-      gE.error('请先修正服务端传输 JSON。');
+      gE.error(XboardT('请先修正服务端传输 JSON。'));
       return false;
     }
     if (!XboardFallbackAllowed(protocol, server.protocol_settings)) {
@@ -207,6 +207,7 @@ function XboardCustomDrafts(form, protocol) {
 }
 
 function XboardCustomExample({kind, form, kernel, protocol, onApply}) {
+  jy('xboard-u');
   const [preview, setPreview] = H.useState(false);
   const cdn = form.watch('cdn_settings');
   const sing = kernel === 'singbox';
@@ -225,16 +226,16 @@ function XboardCustomExample({kind, form, kernel, protocol, onApply}) {
   const json = JSON.stringify([sample], null, 2);
   const action = (label, onClick) => Q.jsx(Lf, {type: 'button', size: 'sm', variant: 'outline', onClick, children: label});
   return Q.jsxs('div', {className: 'xb-custom-example', children: [
-    Q.jsx('p', {children: '有效服务端目标内核 · ' + (sing ? 'Sing-box' : 'Xray') +
-      (cdn?.enabled ? '（CDN 服务端配置）' : '（节点编辑配置）')}),
-    action('根据内核生成示例', () => setPreview(true)),
+    Q.jsx('p', {children: XboardT('有效服务端目标内核 · ') + (sing ? 'Sing-box' : 'Xray') +
+      (cdn?.enabled ? XboardT('（CDN 服务端配置）') : XboardT('（节点编辑配置）'))}),
+    action(XboardT('根据内核生成示例'), () => setPreview(true)),
     preview && Q.jsxs('div', {className: 'xb-example-preview space-y-2', children: [
-      Q.jsx('p', {children: '按项目文档整理。将替换当前菜单和当前内核的 JSON 草稿。请按实际标签、地址和端口修改。'}),
-      Q.jsx('a', {href: source, target: '_blank', rel: 'noreferrer', children: '官方字段说明'}),
+      Q.jsx('p', {children: XboardT('按项目文档整理。将替换当前菜单和当前内核的 JSON 草稿。请按实际标签、地址和端口修改。')}),
+      Q.jsx('a', {href: source, target: '_blank', rel: 'noreferrer', children: XboardT('官方字段说明')}),
       Q.jsx('pre', {className: 'max-h-52 overflow-auto', children: json}),
       Q.jsxs('div', {className: 'flex gap-2', children: [
-        action('确认填入', () => {onApply(json); setPreview(false);}),
-        action('取消', () => setPreview(false))
+        action(XboardT('确认填入'), () => {onApply(json); setPreview(false);}),
+        action(XboardT('取消'), () => setPreview(false))
       ]})
     ]})
   ]});
