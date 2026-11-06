@@ -9,6 +9,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\DB;
+use App\Support\TrafficBatch;
 
 class TrafficFetchJob implements ShouldQueue
 {
@@ -33,16 +35,12 @@ class TrafficFetchJob implements ShouldQueue
     {
         $userIds = array_keys($this->data);
 
+        $increments = [];
         foreach ($this->data as $uid => $v) {
-            User::where('id', $uid)
-                ->incrementEach(
-                    [
-                        'u' => $v[0] * $this->server['rate'],
-                        'd' => $v[1] * $this->server['rate'],
-                    ],
-                    ['t' => time()]
-                );
+            $increments[(int) $uid] = [$v[0] * $this->server['rate'], $v[1] * $this->server['rate']];
         }
+        DB::transaction(fn () => TrafficBatch::increment((new User())->getTable(), $increments,
+            ['t' => time(), 'updated_at' => time()]), 3);
 
         if (!empty($userIds)) {
             Redis::sadd('traffic:pending_check', ...$userIds);

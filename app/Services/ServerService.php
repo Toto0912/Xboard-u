@@ -21,9 +21,11 @@ class ServerService
      */
     public static function getAllServers(): Collection
     {
-        $query = Server::orderBy('sort', 'ASC');
+        $query = Server::with('parent')->orderBy('sort', 'ASC');
 
-        return $query->get()->append([
+        $servers = $query->get();
+        self::loadStatusSnapshots($servers);
+        return $servers->append([
             'last_check_at',
             'last_push_at',
             'online',
@@ -34,6 +36,21 @@ class ServerService
             'metrics',
             'online_conn'
         ]);
+    }
+
+    private static function loadStatusSnapshots(Collection $servers): void
+    {
+        $keys = [];
+        foreach ($servers as $server) {
+            $id = $server->parent_id ?: $server->id;
+            $type = strtoupper($server->type);
+            foreach (['LAST_CHECK_AT', 'LAST_PUSH_AT', 'ONLINE_USER', 'LOAD_STATUS', 'METRICS'] as $field) {
+                $keys[] = CacheKey::get("SERVER_{$type}_{$field}", $id);
+            }
+        }
+        if ($keys === []) return;
+        $values = Cache::many(array_values(array_unique($keys)));
+        foreach ($servers as $server) $server->useStatusSnapshot($values);
     }
 
     /**
@@ -54,7 +71,7 @@ class ServerService
      */
     public static function getAvailableServers(User $user): array
     {
-        $servers = Server::whereJsonContains('group_ids', (string) $user->group_id)
+        $servers = Server::with('parent')->whereJsonContains('group_ids', (string) $user->group_id)
             ->where('show', true)
             ->where(function ($query) {
                 $query->whereNull('transfer_enable')
@@ -65,6 +82,7 @@ class ServerService
             ->get()
             ->append(['last_check_at', 'last_push_at', 'online', 'is_online', 'available_status', 'cache_key', 'server_key']);
 
+        self::loadStatusSnapshots($servers);
         $servers = collect($servers)->map(function ($server) use ($user) {
             // 判断动态端口
             if (str_contains($server->port, '-')) {
@@ -147,9 +165,7 @@ class ServerService
     public static function processAlive(int $nodeId, array $alive): void
     {
         $service = app(DeviceStateService::class);
-        foreach ($alive as $uid => $ips) {
-            $service->setDevices((int) $uid, $nodeId, (array) $ips);
-        }
+        $service->setNodeDevices($nodeId, $alive);
     }
 
     /**

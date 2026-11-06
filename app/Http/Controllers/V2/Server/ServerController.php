@@ -54,8 +54,8 @@ class ServerController extends Controller
         }
 
         $alive = $request->input('alive');
-        if (is_array($alive) && !empty($alive)) {
-            ServerService::processAlive($node->id, $alive);
+        if (is_array($alive)) {
+            app(\App\Services\DeviceStateService::class)->replaceNodeDevices($node->id, $alive);
         }
 
         $online = $request->input('online');

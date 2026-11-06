@@ -6,6 +6,12 @@ use Linfo\Linfo;
 // $lInfo = new Linfo();
 // $parser = $lInfo->getParser();
 
+// Balanced pools allocate at least one worker per queue. Small budgets use
+// one shared pool instead, so maxProcesses remains an actual process cap.
+$dataMax = max(1, (int) env('HORIZON_DATA_PIPELINE_MAX', 8));
+$businessMax = max(1, (int) env('HORIZON_BUSINESS_MAX', 3));
+$notificationMax = max(1, (int) env('HORIZON_NOTIFICATION_MAX', 3));
+
 return [
 
     /*
@@ -168,15 +174,22 @@ return [
     |
     */
 
+    // Horizon merges package defaults into every environment. Disable its
+    // generic supervisor so it does not add an unbudgeted default-queue worker.
+    'defaults' => ['supervisor-1' => [
+        'connection' => 'redis', 'queue' => ['default'], 'balance' => false,
+        'minProcesses' => 1, 'maxProcesses' => 0,
+    ]],
+
     'environments' => [
         'production' => [
             'data-pipeline' => [
                 'connection' => 'redis',
                 'queue' => ['traffic_fetch', 'stat', 'user_alive_sync'],
-                'balance' => 'auto',
+                'balance' => $dataMax >= 3 ? 'auto' : false,
                 'autoScalingStrategy' => 'time',
                 'minProcesses' => 1,
-                'maxProcesses' => (int) env('HORIZON_DATA_PIPELINE_MAX', 8),
+                'maxProcesses' => $dataMax,
                 'memory' => (int) env('HORIZON_WORKER_MEMORY_MB', 128),
                 'maxTime' => (int) env('HORIZON_WORKER_MAX_TIME', 3600),
                 'maxJobs' => (int) env('HORIZON_WORKER_MAX_JOBS', 1000),
@@ -187,9 +200,9 @@ return [
             'business' => [
                 'connection' => 'redis',
                 'queue' => ['default', 'order_handle'],
-                'balance' => 'simple',
+                'balance' => $businessMax >= 2 ? 'simple' : false,
                 'minProcesses' => 1,
-                'maxProcesses' => (int) env('HORIZON_BUSINESS_MAX', 3),
+                'maxProcesses' => $businessMax,
                 'memory' => (int) env('HORIZON_WORKER_MEMORY_MB', 128),
                 'maxTime' => (int) env('HORIZON_WORKER_MAX_TIME', 3600),
                 'maxJobs' => (int) env('HORIZON_WORKER_MAX_JOBS', 1000),
@@ -198,11 +211,12 @@ return [
             ],
             'notification' => [
                 'connection' => 'redis',
-                'queue' => ['send_email', 'send_telegram', 'send_email_mass', 'node_sync'],
-                'balance' => 'auto',
+                // Control-plane changes take priority in small shared pools.
+                'queue' => ['node_sync', 'send_telegram', 'send_email', 'send_email_mass'],
+                'balance' => $notificationMax >= 4 ? 'auto' : false,
                 'autoScalingStrategy' => 'size',
                 'minProcesses' => 1,
-                'maxProcesses' => (int) env('HORIZON_NOTIFICATION_MAX', 3),
+                'maxProcesses' => $notificationMax,
                 'memory' => (int) env('HORIZON_WORKER_MEMORY_MB', 128),
                 'maxTime' => (int) env('HORIZON_WORKER_MAX_TIME', 3600),
                 'maxJobs' => (int) env('HORIZON_WORKER_MAX_JOBS', 1000),
@@ -225,7 +239,7 @@ return [
                     'user_alive_sync',
                     'node_sync'
                 ],
-                'balance' => 'auto',
+                'balance' => false,
                 'minProcesses' => 1,
                 'maxProcesses' => 5,
                 'tries' => 1,

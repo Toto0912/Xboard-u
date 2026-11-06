@@ -4,204 +4,190 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
 
 class DeviceStateService
 {
     private const PREFIX = 'user_devices:';
-    private const TTL = 300;                     // device state ttl
-    private const DB_THROTTLE = 10;             // update db throttle
+    private const TTL = 300;
+    private const DB_THROTTLE = 10;
 
-    /**
-     * 移除 Redis key 的前缀
-     */
-    private function removeRedisPrefix(string $key): string
-    {
-        $prefix = config('database.redis.options.prefix', '');
-        return $prefix ? substr($key, strlen($prefix)) : $key;
-    }
-
-    /**
-     * 批量设置设备
-     * 用于 HTTP /alive 和 WebSocket report.devices
-     */
     public function setDevices(int $userId, int $nodeId, array $ips): void
     {
-        $key = self::PREFIX . $userId;
-        $timestamp = time();
-
-        $this->removeNodeDevices($nodeId, $userId);
-
-        // Normalize: strip port suffix and deduplicate
-        $ips = array_values(array_unique(array_map([self::class, 'normalizeIP'], $ips)));
-
-        if (!empty($ips)) {
-            $fields = [];
-            foreach ($ips as $ip) {
-                $fields["{$nodeId}:{$ip}"] = $timestamp;
-            }
-            Redis::hMset($key, $fields);
-            Redis::expire($key, self::TTL);
-        }
-
-        $this->notifyUpdate($userId);
+        $this->writeSnapshot($nodeId, [$userId => $ips], false);
     }
 
-    /**
-     * 获取某节点的所有设备数据
-     * 返回: {userId: [ip1, ip2, ...], ...}
-     */
-    public function getNodeDevices(int $nodeId): array
+    /** Legacy HTTP alive reports update only users present in the report. */
+    public function setNodeDevices(int $nodeId, array $devices): void
     {
-        $keys = Redis::keys(self::PREFIX . '*');
-        $prefix = "{$nodeId}:";
-        $result = [];
-        foreach ($keys as $key) {
-            $actualKey = $this->removeRedisPrefix($key);
-            $uid = (int) substr($actualKey, strlen(self::PREFIX));
-            $data = Redis::hgetall($actualKey);
-            foreach ($data as $field => $timestamp) {
-                if (str_starts_with($field, $prefix)) {
-                    $ip = substr($field, strlen($prefix));
-                    $result[$uid][] = $ip;
-                }
-            }
-        }
-
-        return $result;
+        $this->writeSnapshot($nodeId, $devices, false);
     }
 
-    /**
-     * 删除某节点某用户的设备
-     */
-    public function removeNodeDevices(int $nodeId, int $userId): void
+    /** Complete v2/WS snapshot: absent users are removed from this node. */
+    public function replaceNodeDevices(int $nodeId, array $devices): array
     {
-        $key = self::PREFIX . $userId;
-        $prefix = "{$nodeId}:";
-
-        foreach (Redis::hkeys($key) as $field) {
-            if (str_starts_with($field, $prefix)) {
-                Redis::hdel($key, $field);
-            }
-        }
+        return $this->writeSnapshot($nodeId, $devices, true);
     }
 
-    /**
-     * 清除节点所有设备数据（用于节点断开连接）
-     */
     public function clearAllNodeDevices(int $nodeId): array
     {
-        $oldDevices = $this->getNodeDevices($nodeId);
-        $prefix = "{$nodeId}:";
+        return $this->replaceNodeDevices($nodeId, []);
+    }
 
-        foreach ($oldDevices as $userId => $ips) {
-            $key = self::PREFIX . $userId;
-            foreach (Redis::hkeys($key) as $field) {
-                if (str_starts_with($field, $prefix)) {
-                    Redis::hdel($key, $field);
+    public function removeNodeDevices(int $nodeId, int $userId): void
+    {
+        $this->setDevices($userId, $nodeId, []);
+    }
+
+    private function indexKey(int $id): string { return "node_devices:{$id}"; }
+    private function readyKey(int $id): string { return "node_devices:indexed:{$id}"; }
+    private function pendingKey(int $id): string { return "node_devices:pending:{$id}"; }
+
+    private function writeSnapshot(int $nodeId, array $devices, bool $complete): array
+    {
+        $this->ensureNodeIndex($nodeId);
+        $normalized = [];
+        foreach ($devices as $userId => $ips) {
+            if (!ctype_digit((string) $userId) || (int) $userId <= 0 || !is_array($ips)) continue;
+            $normalized[(int) $userId] = array_values(array_unique(array_map(
+                [self::class, 'normalizeIP'], array_filter($ips, 'is_string')
+            )));
+        }
+        $result = Redis::eval($this->script('device-snapshot'), 3,
+            $this->indexKey($nodeId), $this->pendingKey($nodeId), 'node_devices:revision',
+            config('database.redis.options.prefix', '') . self::PREFIX,
+            (string) $nodeId, time(), self::TTL, $complete ? 'full' : 'partial',
+            json_encode((object) $normalized, JSON_THROW_ON_ERROR));
+        $affected = json_decode($result, true, 512, JSON_THROW_ON_ERROR);
+        $pending = $affected['pending'];
+        // Retry failed SQL writes. An old request may acknowledge only its own
+        // revision, never a newer overlapping report from the same node.
+        $this->persistCounts(array_map('intval', array_keys($pending)));
+        if ($pending !== []) {
+            Redis::eval($this->script('device-ack'), 1, $this->pendingKey($nodeId),
+                json_encode((object) $pending, JSON_THROW_ON_ERROR));
+        }
+        return array_map('intval', $affected['users']);
+    }
+
+    /** Reads only users indexed under this node, not every user in Redis. */
+    public function getNodeDevices(int $nodeId): array
+    {
+        $this->ensureNodeIndex($nodeId);
+        $ids = Redis::zrangebyscore($this->indexKey($nodeId), time() - self::TTL, '+inf');
+        $result = [];
+        $prefix = "{$nodeId}:";
+        $cutoff = time() - self::TTL;
+        foreach ($this->readUserHashes($ids) as $uid => $fields) {
+            foreach ($fields as $field => $timestamp) {
+                if ((int) $timestamp >= $cutoff && str_starts_with($field, $prefix)) {
+                    $result[$uid][] = substr($field, strlen($prefix));
                 }
             }
-            $this->notifyUpdate($userId);
         }
-
-        return array_keys($oldDevices);
-    }
-
-    /**
-     * get user device count (deduplicated by IP, filter expired data)
-     */
-    public function getDeviceCount(int $userId): int
-    {
-        $data = Redis::hgetall(self::PREFIX . $userId);
-        $now = time();
-        $ips = [];
-
-        foreach ($data as $field => $timestamp) {
-            if ($now - $timestamp <= self::TTL) {
-                $ips[] = substr($field, strpos($field, ':') + 1);
-            }
-        }
-
-        return count(array_unique($ips));
-    }
-
-    /**
-     * get user device count (for alivelist interface)
-     */
-    public function getAliveList(Collection $users): array
-    {
-        if ($users->isEmpty()) {
-            return [];
-        }
-
-        $result = [];
-        foreach ($users as $user) {
-            $count = $this->getDeviceCount($user->id);
-            if ($count > 0) {
-                $result[$user->id] = $count;
-            }
-        }
-
         return $result;
     }
 
-    /**
-     * get devices of multiple users (for sync.devices, filter expired data)
-     */
+    /** Import pre-index state once per node, using non-blocking SCAN. */
+    private function ensureNodeIndex(int $nodeId): void
+    {
+        if (Redis::exists($this->readyKey($nodeId))) return;
+        $redisPrefix = config('database.redis.options.prefix', '');
+        $cursor = null;
+        $members = [];
+        $cutoff = time() - self::TTL;
+        do {
+            $page = Redis::scan($cursor, ['match' => $redisPrefix . self::PREFIX . '*', 'count' => 500]);
+            if ($page === false) break;
+            [$cursor, $keys] = $page;
+            $ids = [];
+            foreach ($keys as $key) {
+                $uid = substr($key, strlen($redisPrefix . self::PREFIX));
+                if (ctype_digit($uid) && (int) $uid > 0) $ids[] = (int) $uid;
+            }
+            foreach ($this->readUserHashes($ids) as $uid => $fields) {
+                foreach ($fields as $field => $timestamp) {
+                    if ((int) $timestamp >= $cutoff && str_starts_with($field, "{$nodeId}:")) {
+                        $members[$uid] = max($members[$uid] ?? 0, (int) $timestamp);
+                    }
+                }
+            }
+        } while ($cursor !== 0);
+        Redis::eval($this->script('device-index'), 2, $this->indexKey($nodeId),
+            $this->readyKey($nodeId), self::TTL, json_encode((object) $members, JSON_THROW_ON_ERROR));
+    }
+
+    private function readUserHashes(array $ids): array
+    {
+        $result = [];
+        foreach (array_chunk(array_values(array_unique(array_map('intval', $ids))), 500) as $chunk) {
+            $values = Redis::pipeline(function ($pipe) use ($chunk) {
+                foreach ($chunk as $uid) $pipe->hgetall(self::PREFIX . $uid);
+            });
+            foreach ($chunk as $i => $uid) $result[$uid] = $values[$i];
+        }
+        return $result;
+    }
+
     public function getUsersDevices(array $userIds): array
     {
         $result = [];
-        $now = time();
-        foreach ($userIds as $userId) {
-            $data = Redis::hgetall(self::PREFIX . $userId);
-            if (!empty($data)) {
-                $ips = [];
-                foreach ($data as $field => $timestamp) {
-                    if ($now - $timestamp <= self::TTL) {
-                        $ips[] = substr($field, strpos($field, ':') + 1);
-                    }
-                }
-                if (!empty($ips)) {
-                    $result[$userId] = array_values(array_unique($ips));
-                }
+        $cutoff = time() - self::TTL;
+        foreach ($this->readUserHashes($userIds) as $uid => $fields) {
+            $ips = [];
+            foreach ($fields as $field => $timestamp) {
+                if ((int) $timestamp >= $cutoff) $ips[] = substr($field, strpos($field, ':') + 1);
             }
+            if ($ips !== []) $result[$uid] = array_values(array_unique($ips));
         }
-
         return $result;
     }
 
-    /**
-     * Strip port from IP address: "1.2.3.4:12345" → "1.2.3.4", "[::1]:443" → "::1"
-     */
-    private static function normalizeIP(string $ip): string
+    public function getDeviceCount(int $userId): int
     {
-        // [IPv6]:port
-        if (preg_match('/^\[(.+)\]:\d+$/', $ip, $m)) {
-            return $m[1];
-        }
-        // IPv4:port
-        if (preg_match('/^(\d+\.\d+\.\d+\.\d+):\d+$/', $ip, $m)) {
-            return $m[1];
-        }
-        return $ip;
+        return count($this->getUsersDevices([$userId])[$userId] ?? []);
     }
 
-    /**
-     * notify update (throttle control)
-     */
-    public function notifyUpdate(int $userId): void
+    public function getAliveList(Collection $users): array
     {
-        $dbThrottleKey = "device:db_throttle:{$userId}";
+        return array_map('count', $this->getUsersDevices($users->pluck('id')->all()));
+    }
 
-        // if (Redis::setnx($dbThrottleKey, 1)) {
-        //     Redis::expire($dbThrottleKey, self::DB_THROTTLE);
+    public function notifyUpdate(int $userId): void { $this->persistCounts([$userId]); }
 
-            User::query()
-                ->whereKey($userId)
-                ->update([
-                    'online_count' => $this->getDeviceCount($userId),
-                    'last_online_at' => now(),
-                ]);
-        // }
+    private function persistCounts(array $ids): void
+    {
+        sort($ids, SORT_NUMERIC);
+        foreach (array_chunk($ids, 400) as $chunk) {
+            DB::transaction(function () use ($chunk) {
+                // Row locks order concurrent writers. Read Redis only after
+                // acquiring them, so a delayed report cannot commit old counts.
+                $existing = User::whereIn('id', $chunk)->orderBy('id')->lockForUpdate()->pluck('id')->all();
+                if ($existing === []) return;
+                $devices = $this->getUsersDevices($existing);
+                $case = 'CASE id';
+                foreach ($existing as $uid) $case .= ' WHEN ' . (int) $uid . ' THEN ' . count($devices[$uid] ?? []);
+                $case .= ' ELSE online_count END';
+                User::whereIn('id', $existing)->where(function ($query) use ($case) {
+                    $query->whereRaw("COALESCE(online_count, -1) <> ({$case})")
+                        ->orWhereNull('last_online_at')
+                        ->orWhere('last_online_at', '<=', now()->subSeconds(self::DB_THROTTLE));
+                })->update(['online_count' => DB::raw($case), 'last_online_at' => now()]);
+            }, 3);
+        }
+    }
+
+    private function script(string $name): string
+    {
+        static $scripts = [];
+        return $scripts[$name] ??= file_get_contents(resource_path("lua/{$name}.lua"));
+    }
+
+    private static function normalizeIP(string $ip): string
+    {
+        if (preg_match('/^\[(.+)\]:\d+$/', $ip, $m)) return $m[1];
+        if (preg_match('/^(\d+\.\d+\.\d+\.\d+):\d+$/', $ip, $m)) return $m[1];
+        return $ip;
     }
 }

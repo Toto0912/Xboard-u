@@ -17,9 +17,12 @@ class ManageController extends Controller
 {
     public function getNodes(Request $request)
     {
-        $servers = ServerService::getAllServers()->map(function ($item) {
-            $item['groups'] = ServerGroup::whereIn('id', $item['group_ids'] ?? [])->get(['name', 'id']);
-            $item['parent'] = $item->parent;
+        $nodes = ServerService::getAllServers();
+        $groupIds = $nodes->flatMap(fn ($node) => $node->group_ids ?? [])->unique()->all();
+        $groups = ServerGroup::whereIn('id', $groupIds)->get(['name', 'id'])->keyBy('id');
+        $servers = $nodes->map(function ($item) use ($groups) {
+            $item['groups'] = collect($item['group_ids'] ?? [])->map(fn ($id) => $groups->get($id))
+                ->filter()->sortBy('id')->values();
             $data = $item->makeVisible('cdn_settings')->toArray();
             // Nested form fields must start on a JSON object. Named properties
             // assigned to [] by react-hook-form disappear during JSON.stringify.

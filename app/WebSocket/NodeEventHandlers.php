@@ -49,34 +49,9 @@ class NodeEventHandlers
             $data = $data['devices'];
         }
 
-        // Get old data
-        $oldDevices = $service->getNodeDevices($nodeId);
-
-        // Calculate diff
-        $removedUsers = array_diff_key($oldDevices, $data);
-        $newDevices = [];
-
-        foreach ($data as $userId => $ips) {
-            if (is_numeric($userId) && is_array($ips)) {
-                $newDevices[(int) $userId] = $ips;
-            }
-        }
-
-        // Handle removed users
-        foreach ($removedUsers as $userId => $ips) {
-            $service->removeNodeDevices($nodeId, $userId);
-            $service->notifyUpdate($userId);
-        }
-
-        // Handle new/updated users
-        foreach ($newDevices as $userId => $ips) {
-            $service->setDevices($userId, $nodeId, $ips);
-        }
-
-        // Mark for push
+        $affected = $service->replaceNodeDevices($nodeId, $data);
         Redis::sadd('device:push_pending_nodes', $nodeId);
-
-        Log::debug("[WS] Node#{$nodeId} synced " . count($newDevices) . " users, removed " . count($removedUsers));
+        Log::debug("[WS] Node#{$nodeId} synced devices", ['affected_users' => count($affected)]);
     }
 
     /**

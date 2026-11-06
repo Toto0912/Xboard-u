@@ -2,10 +2,11 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前版本：**v2.0.2**。
+当前版本：**v2.1.0**，配套节点端 xboard-node-u v2.1.0。
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
+- v2.1.0 优化设备同步、Redis、队列和数据库批量写入，修复重连时的设备状态清理。
 - v2.0.0 新增 [CDN 套用](docs/二次开发功能说明.md#cdn-套用v200)，允许分别配置订阅入口和节点监听。
 
 - v1.1.3 支持 Sing-box / Xray 原生自定义出站和路由，兼容旧面板出站格式。

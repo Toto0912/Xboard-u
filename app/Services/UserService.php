@@ -124,6 +124,9 @@ class UserService
         list($server, $protocol, $data) = HookManager::filter('traffic.before_process', [$server, $protocol, $data]);
 
         $timestamp = strtotime(date('Y-m-d'));
+        // These jobs use only ID/rate. Do not serialize TLS keys and custom
+        // connection settings into every traffic chunk after hooks have run.
+        $server = ['id' => $server['id'], 'rate' => $server['rate']];
         collect($data)->chunk(1000)->each(function ($chunk) use ($timestamp, $server, $protocol) {
             TrafficFetchJob::dispatch($server, $chunk->toArray(), $protocol, $timestamp);
             StatUserJob::dispatch($server, $chunk->toArray(), $protocol, 'd');

@@ -111,6 +111,19 @@ class Server extends Model
         self::TYPE_MIERU,
     ];
 
+    private ?array $statusSnapshot = null;
+
+    public function useStatusSnapshot(array $values): void
+    {
+        $this->statusSnapshot = $values;
+    }
+
+    private function readStatus(string $key): mixed
+    {
+        return $this->statusSnapshot !== null && array_key_exists($key, $this->statusSnapshot)
+            ? $this->statusSnapshot[$key] : Cache::get($key);
+    }
+
     protected $table = 'v2_server';
 
     protected $guarded = ['id'];
@@ -480,7 +493,7 @@ class Server extends Model
             get: function () {
                 $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return Cache::get(CacheKey::get("SERVER_{$type}_LAST_CHECK_AT", $serverId));
+                return $this->readStatus(CacheKey::get("SERVER_{$type}_LAST_CHECK_AT", $serverId));
             }
         );
     }
@@ -494,7 +507,7 @@ class Server extends Model
             get: function () {
                 $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return Cache::get(CacheKey::get("SERVER_{$type}_LAST_PUSH_AT", $serverId));
+                return $this->readStatus(CacheKey::get("SERVER_{$type}_LAST_PUSH_AT", $serverId));
             }
         );
     }
@@ -508,7 +521,7 @@ class Server extends Model
             get: function () {
                 $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return Cache::get(CacheKey::get("SERVER_{$type}_ONLINE_USER", $serverId)) ?? 0;
+                return $this->readStatus(CacheKey::get("SERVER_{$type}_ONLINE_USER", $serverId)) ?? 0;
             }
         );
     }
@@ -561,7 +574,7 @@ class Server extends Model
             get: function () {
                 $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return Cache::get(CacheKey::get("SERVER_{$type}_METRICS", $serverId));
+                return $this->readStatus(CacheKey::get("SERVER_{$type}_METRICS", $serverId));
             }
         );
     }
@@ -587,7 +600,7 @@ class Server extends Model
             get: function () {
                 $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return Cache::get(CacheKey::get("SERVER_{$type}_LOAD_STATUS", $serverId));
+                return $this->readStatus(CacheKey::get("SERVER_{$type}_LOAD_STATUS", $serverId));
             }
         );
     }

@@ -18,7 +18,9 @@ class StatServerJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected array $data;
+    // Defaults keep already-queued jobs serialized by previous versions readable.
+    protected array $data = [];
+    protected ?array $totals = null;
     protected array $server;
     protected string $protocol;
     protected string $recordType;
@@ -41,7 +43,9 @@ class StatServerJob implements ShouldQueue
     public function __construct(array $server, array $data, $protocol, string $recordType = 'd')
     {
         $this->onQueue('stat');
-        $this->data = $data;
+        $u = $d = 0;
+        foreach ($data as $traffic) { $u += $traffic[0]; $d += $traffic[1]; }
+        $this->totals = [$u, $d];
         $this->server = $server;
         $this->protocol = $protocol;
         $this->recordType = $recordType;
@@ -53,15 +57,18 @@ class StatServerJob implements ShouldQueue
             ? strtotime(date('Y-m-01'))
             : strtotime(date('Y-m-d'));
 
-        $u = $d = 0;
-        foreach ($this->data as $traffic) {
-            $u += $traffic[0];
-            $d += $traffic[1];
+        if ($this->totals !== null) {
+            [$u, $d] = $this->totals;
+        } else {
+            $u = $d = 0;
+            foreach ($this->data as $traffic) { $u += $traffic[0]; $d += $traffic[1]; }
         }
 
         try {
-            $this->processServerStat($u, $d, $recordAt);
-            $this->updateServerTraffic($u, $d);
+            DB::transaction(function () use ($u, $d, $recordAt) {
+                $this->processServerStat($u, $d, $recordAt);
+                $this->updateServerTraffic($u, $d);
+            }, 3);
         } catch (\Exception $e) {
             Log::error('StatServerJob failed for server ' . $this->server['id'] . ': ' . $e->getMessage());
             throw $e;
