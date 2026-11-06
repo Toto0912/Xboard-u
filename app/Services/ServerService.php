@@ -274,7 +274,7 @@ class ServerService
 
         $baseConfig = [
             'protocol' => $nodeType,
-            'listen_ip' => '0.0.0.0',
+            'listen_ip' => '::',
             'server_port' => (int) $serverPort,
             'network' => data_get($protocolSettings, 'network'),
             'networkSettings' => \App\Support\ServerTransport::nodeParameters($protocolSettings, (bool) ($node->cdn_settings['enabled'] ?? false)),
