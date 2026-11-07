@@ -2,10 +2,11 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前版本：**v2.1.0**，配套节点端 xboard-node-u v2.1.0。
+当前版本：**v2.1.1**，兼容配套节点端 xboard-node-u v2.1.0。
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
+- v2.1.1 为 Mihomo / Clash Meta、Stash 输出的 Reality 订阅自动启用 X25519MLKEM768 密钥交换选项。
 - v2.1.0 优化设备同步、Redis、队列和数据库批量写入，修复重连时的设备状态清理，并默认下发 IPv4/IPv6 双栈监听。
 - v2.0.0 新增 [CDN 套用](docs/二次开发功能说明.md#cdn-套用v200)，允许分别配置订阅入口和节点监听。
 

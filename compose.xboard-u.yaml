@@ -1,4 +1,4 @@
 # Upgrade override: merge with the existing deployment, preserving its project name.
 services:
   xboard:
-    image: ghcr.io/toto0912/xboard-u:v2.1.0
+    image: ghcr.io/toto0912/xboard-u:v2.1.1

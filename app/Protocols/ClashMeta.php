@@ -441,7 +441,8 @@ class ClashMeta extends AbstractProtocol
                 $array['servername'] = data_get($protocol_settings, 'reality_settings.server_name');
                 $array['reality-opts'] = [
                     'public-key' => data_get($protocol_settings, 'reality_settings.public_key'),
-                    'short-id' => data_get($protocol_settings, 'reality_settings.short_id')
+                    'short-id' => data_get($protocol_settings, 'reality_settings.short_id'),
+                    'support-x25519mlkem768' => true,
                 ];
                 self::appendUtls($array, $protocol_settings);
                 break;
@@ -540,6 +541,7 @@ class ClashMeta extends AbstractProtocol
                 $array['reality-opts'] = [
                     'public-key' => data_get($protocol_settings, 'reality_settings.public_key'),
                     'short-id' => data_get($protocol_settings, 'reality_settings.short_id'),
+                    'support-x25519mlkem768' => true,
                 ];
                 break;
             default: // Standard TLS

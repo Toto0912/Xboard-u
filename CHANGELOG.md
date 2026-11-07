@@ -1,5 +1,10 @@
 # 更新记录
 
+## v2.1.1 — 2026-11-07
+
+- Mihomo / Clash Meta、Stash 订阅自动为输出的 Reality 配置添加 `reality-opts.support-x25519mlkem768: true`，包含 Mihomo 的 XHTTP Reality 下行；保留各客户端既有协议筛选，普通 TLS、其他客户端订阅和服务端配置不添加此字段。
+- 无需修改订阅模板、数据库或节点端配置，兼容 xboard-node-u v2.1.0。
+
 ## v2.1.0 — 2026-11-06
 
 - 同版本更新：默认向节点下发 `listen_ip: "::"`，使支持双栈的系统同时监听 IPv4、IPv6；统一应用于单节点、机器模式的 REST 与 WebSocket 配置，以及 CDN 分离后的服务端配置。

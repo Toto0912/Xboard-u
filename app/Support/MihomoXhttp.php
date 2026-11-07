@@ -146,7 +146,7 @@ final class MihomoXhttp
                 || !preg_match('/^(?:[a-fA-F0-9]{2}){0,8}$/D', $shortId)) {
                 throw new InvalidArgumentException('invalid download Reality public key or short ID');
             }
-            $opts['reality-opts'] = ['public-key' => $key, 'short-id' => $shortId];
+            $opts['reality-opts'] = ['public-key' => $key, 'short-id' => $shortId, 'support-x25519mlkem768' => true];
         } elseif ($security === 'tls' && !empty($tls['echConfigList'])) {
             $opts['ech-opts'] = ['enable' => true, 'config' => Helper::toMihomoEchConfig(self::string($tls['echConfigList']))];
         }

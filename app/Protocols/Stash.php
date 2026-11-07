@@ -327,7 +327,8 @@ class Stash extends AbstractProtocol
                 $array['flow'] = data_get($protocol_settings, 'flow');
                 $array['reality-opts'] = [
                     'public-key' => data_get($protocol_settings, 'reality_settings.public_key'),
-                    'short-id' => data_get($protocol_settings, 'reality_settings.short_id')
+                    'short-id' => data_get($protocol_settings, 'reality_settings.short_id'),
+                    'support-x25519mlkem768' => true,
                 ];
                 break;
         }
@@ -394,6 +395,7 @@ class Stash extends AbstractProtocol
                 $array['reality-opts'] = [
                     'public-key' => data_get($protocol_settings, 'reality_settings.public_key'),
                     'short-id' => data_get($protocol_settings, 'reality_settings.short_id'),
+                    'support-x25519mlkem768' => true,
                 ];
                 break;
             default: // Standard TLS
