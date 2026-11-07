@@ -220,9 +220,9 @@ function XboardCustomExample({kind, form, kernel, protocol, onApply}) {
   const sample = outbounds
     ? sing
       ? {type: 'socks', tag, server: '127.0.0.1', server_port: 1234, username: 'testuser', password: 'testpass'}
-      : {protocol: 'socks', tag, settings: {servers: [{address: '127.0.0.1', port: 1234, users: [{user: 'testuser', pass: 'testpass'}]}]}}
+      : {tag, protocol: 'socks', settings: {address: '127.0.0.1', port: 1234, user: 'testuser', pass: 'testpass'}}
     : sing ? {inbound: [protocol + '-in'], action: 'route', outbound: tag}
-      : {type: 'field', localPort: port, outboundTag: tag};
+      : {localPort: port, outboundTag: tag};
   const json = JSON.stringify([sample], null, 2);
   const action = (label, onClick) => Q.jsx(Lf, {type: 'button', size: 'sm', variant: 'outline', onClick, children: label});
   return Q.jsxs('div', {className: 'xb-custom-example', children: [

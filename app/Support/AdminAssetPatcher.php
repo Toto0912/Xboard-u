@@ -102,7 +102,11 @@ final class AdminAssetPatcher
             'children:i("common.save","Save")'
                 => 'children:XboardT("保存")',
             'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t'
-                => 'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?XboardT("在高级设置 → CDN套用中设置服务端端口"):undefined',
+                => 'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,value:x.watch("cdn_settings")?.enabled?(x.watch("cdn_settings.server.server_port")??""):t.value,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?XboardT("在高级设置 → CDN套用中设置服务端端口"):undefined',
+            'const n=`${e.host}:${e.port}`,i=e.port!==e.server_port;'
+                => 'const n=`${e.host}:${e.port}`,xboardServerPort=e.cdn_settings?.enabled?(e.cdn_settings.server?.server_port??""):e.server_port,i=String(e.port)!==String(xboardServerPort);',
+            'children:["(",t("columns.internalPort")," ",e.server_port,")"]'
+                => 'children:["(",t("columns.internalPort")," ",xboardServerPort,")"]',
             'flex flex-row items-center justify-between border-t bg-muted/20 px-6 py-4 sm:space-x-0'
                 => 'flex flex-row flex-wrap items-center justify-end gap-2 border-t bg-muted/20 px-3 py-3 sm:space-x-0',
         ];

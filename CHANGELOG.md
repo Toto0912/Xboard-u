@@ -1,5 +1,10 @@
 # 更新记录
 
+## v2.1.2 — 2026-11-07
+
+- 自定义配置的 Xray 出站示例改用扁平的 `settings.address/port/user/pass` 原生格式，路由示例省略旧式 `type: "field"`；路由仍按实际服务端监听端口生成，与现有说明文档一致。
+- 修复 CDN 分离开启时外层只读服务端口及节点列表内部端口仍显示旧草稿的问题，改为展示实际的内层监听端口；关闭分离时恢复外层草稿，不改动客户端连接端口和节点配置保存规则。
+
 ## v2.1.1 — 2026-11-07
 
 - Mihomo / Clash Meta、Stash 订阅自动为输出的 Reality 配置添加 `reality-opts.support-x25519mlkem768: true`，包含 Mihomo 的 XHTTP Reality 下行；保留各客户端既有协议筛选，普通 TLS、其他客户端订阅和服务端配置不添加此字段。
