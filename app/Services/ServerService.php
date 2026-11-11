@@ -330,8 +330,10 @@ class ServerService
                 'host' => $host,
                 'server_name' => $protocolSettings['tls']['server_name'],
                 'tls_settings' => $protocolSettings['tls'],
-                'up_mbps' => (int) $protocolSettings['bandwidth']['up'],
-                'down_mbps' => (int) $protocolSettings['bandwidth']['down'],
+                // The panel bandwidth is client-facing; HY2 server directions are reversed.
+                'up_mbps' => (int) $protocolSettings['bandwidth'][(int) $protocolSettings['version'] === 2 ? 'down' : 'up'],
+                'down_mbps' => (int) $protocolSettings['bandwidth'][(int) $protocolSettings['version'] === 2 ? 'up' : 'down'],
+                ...((int) $protocolSettings['version'] === 2 ? ['hy2_settings' => \App\Support\Hysteria2Settings::server($protocolSettings)] : []),
                 ...match ((int) $protocolSettings['version']) {
                         1 => ['obfs' => $protocolSettings['obfs']['password'] ?? null],
                         2 => [

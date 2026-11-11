@@ -80,7 +80,7 @@ final class AdminAssetPatcher
             'max-h-[60vh] min-h-[350px] overflow-y-auto px-6 py-4",children:[Q.jsx(aw'
                 => 'min-h-0 overflow-y-auto px-6 py-4",style:{maxHeight:"52dvh"},children:[Q.jsx(aw,{value:"cdn",forceMount:true,hidden:o!=="cdn",children:r&&Q.jsx(XboardCdnFields,{form:e,protocol:inboundProtocol})}),Q.jsx(aw',
             'const t=x.getValues(),n=parseFloat(t.transfer_enable_gb'
-                => 'const t=x.getValues();if(t.protocol_settings?.transport_draft_invalid)return gE.error(XboardT("请先修正传输 JSON。"));const n=parseFloat(t.transfer_enable_gb',
+                => 'const t=x.getValues();if(!t.cdn_settings?.enabled&&Number(t.protocol_settings?.version||2)===2&&t.protocol_settings?.hy2_draft_invalid)return gE.error(XboardT("请填写有效的 JSON 对象。"));if(t.protocol_settings?.transport_draft_invalid)return gE.error(XboardT("请先修正传输 JSON。"));const n=parseFloat(t.transfer_enable_gb',
             'return!t})()&&s(!1)'
                 => 'return!t})()&&XboardCommitAdvanced(outer,e,inboundProtocol,customTouched)&&s(!1)',
             'custom_routes:gy(hy()).default([]),protocol_settings:'
@@ -154,7 +154,7 @@ final class AdminAssetPatcher
         if (substr_count($source, $anchor) !== 1) {
             throw new RuntimeException('Unexpected target kernel schema anchor.');
         }
-        $source = str_replace($anchor, 'a=H.useMemo(()=>o?.schema?.extend({target_kernel:cy().nullable().optional(),transport_draft_invalid:uy().optional()})||fy(hy()),[e])', $source);
+        $source = str_replace($anchor, 'a=H.useMemo(()=>o?.schema?.extend({target_kernel:cy().nullable().optional(),hy2_settings:hy().nullable().optional(),hy2_draft_invalid:uy().optional(),transport_draft_invalid:uy().optional()})||fy(hy()),[e])', $source);
         $flowOptions = 'flowOptions:["none","xtls-rprx-direct","xtls-rprx-splice","xtls-rprx-vision"]';
         $flowField = 'Q.jsx($y,{control:e.control,name:"flow",render:({field:e})=>Q.jsxs(Gy,{children:[Q.jsx(Zy,{className:"font-mono text-[12px] text-foreground/80",children:t("dynamic_form.vless.flow.label")}),Q.jsx(Yy,{children:Q.jsxs(yzt,{onValueChange:t=>e.onChange("none"===t?null:t),value:e.value||"none",children:[Q.jsx(Czt,{className:"font-mono text-xs",children:Q.jsx(wzt,{placeholder:t("dynamic_form.vless.flow.placeholder")})}),Q.jsx(Nzt,{children:P4t.flowOptions.map(e=>Q.jsx(Lzt,{value:e,children:e},e))})]})})]})})';
         if (substr_count($source, $flowOptions) !== 1 || substr_count($source, $flowField) !== 1) {
@@ -194,6 +194,9 @@ final class AdminAssetPatcher
             $layoutSource = str_replace($anchor, $replacement, $layoutSource);
         }
         $source = substr_replace($source, $layoutSource, $layoutStart, $layoutEnd - $layoutStart);
+        $hy2Anchor = 'Q.jsx(c,{form:l,t:i})';
+        if (substr_count($source, $hy2Anchor) !== 1) { throw new RuntimeException('Unexpected HY2 form anchor.'); }
+        $source = str_replace($hy2Anchor, 'Q.jsxs(Q.Fragment,{children:[Q.jsx(c,{form:l,t:i}),e==="hysteria"&&Q.jsx(XboardHY2Editor,{form:l})]})', $source);
         return $source . "\n;" . $component . "\n";
     }
 
@@ -201,7 +204,7 @@ final class AdminAssetPatcher
     {
         return implode("\n; ", array_map(
             fn (string $name) => file_get_contents($root . '/resources/js/' . $name . '.js'),
-            ['admin-i18n', 'admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor']
+            ['admin-i18n', 'admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor', 'admin-hy2']
         ));
     }
 

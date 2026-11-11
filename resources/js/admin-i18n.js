@@ -119,7 +119,17 @@ const XboardTranslations = {
     "当前 Flow 已停止支持，请选择 none 或 xtls-rprx-vision。": "This Flow is no longer supported. Select none or xtls-rprx-vision.",
     "path": "Path",
     "host": "Host",
-    "mode": "Mode"
+    "mode": "Mode",
+    "伪装（Masquerade）": "Masquerade",
+    "伪装类型": "Masquerade type",
+    "Masquerade 在 CDN套用的服务端配置中编辑。": "Edit Masquerade in the CDN server settings.",
+    "仅服务端使用。留空返回 HTTP/3 404；QUIC 参数沿用内核默认值。": "Server only. Empty means HTTP/3 404; QUIC uses core defaults.",
+    "带宽已设置：参与 Brutal 协商，采用双方限制中的较小值。": "Bandwidth set: negotiate Brutal using the lower limit of the two peers.",
+    "带宽留空：使用 BBR，并忽略客户端带宽提示。": "Bandwidth empty: use BBR and ignore client bandwidth hints.",
+    "清空后恢复默认 404，是否继续？": "Clear this configuration and restore the default 404 response?",
+    "请填写有效的 JSON 对象。": "Enter a valid JSON object.",
+    "按官方文档与当前内核整理的完整类型示例。确认后替换草稿，请修改占位地址或目录。": "Complete type example based on official docs and this core. Confirm to replace the draft, then edit the placeholder URL or directory.",
+    "带宽按客户端视角填写：上行对应服务端下行，下行对应服务端上行。": "Enter bandwidth from the client perspective: upload is server download, and download is server upload."
   },
   "ru-RU": {
     "高级设置": "Расширенные настройки",
@@ -240,12 +250,25 @@ const XboardTranslations = {
     "当前 Flow 已停止支持，请选择 none 或 xtls-rprx-vision。": "Это значение Flow больше не поддерживается. Выберите none или xtls-rprx-vision.",
     "path": "Путь",
     "host": "Host",
-    "mode": "Режим"
+    "mode": "Режим",
+    "伪装（Masquerade）": "Маскировка (Masquerade)",
+    "伪装类型": "Тип маскировки",
+    "Masquerade 在 CDN套用的服务端配置中编辑。": "Настройте Masquerade в серверных параметрах CDN.",
+    "仅服务端使用。留空返回 HTTP/3 404；QUIC 参数沿用内核默认值。": "Только для сервера. Пустое поле означает HTTP/3 404; QUIC использует настройки ядра по умолчанию.",
+    "带宽已设置：参与 Brutal 协商，采用双方限制中的较小值。": "Пропускная способность задана: Brutal согласует меньший из лимитов сторон.",
+    "带宽留空：使用 BBR，并忽略客户端带宽提示。": "Пропускная способность не задана: BBR без учёта подсказок клиента.",
+    "清空后恢复默认 404，是否继续？": "Очистить настройки и восстановить ответ 404 по умолчанию?",
+    "请填写有效的 JSON 对象。": "Введите корректный объект JSON.",
+    "按官方文档与当前内核整理的完整类型示例。确认后替换草稿，请修改占位地址或目录。": "Полный пример типа по официальной документации и текущему ядру. Подтвердите замену черновика, затем измените адрес или каталог.",
+    "带宽按客户端视角填写：上行对应服务端下行，下行对应服务端上行。": "Скорости задаются со стороны клиента: отправка соответствует приёму сервера, загрузка — отправке сервера."
   }
 };
 for (const [language, messages] of Object.entries(XboardTranslations)) {
   lL.addResourceBundle(language, 'xboard-u', messages, true, true);
 }
+
+
+
 
 function XboardT(message) {
   return lL.t(message, {ns: 'xboard-u', keySeparator: false, nsSeparator: false, defaultValue: message});

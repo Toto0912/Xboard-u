@@ -254,6 +254,8 @@ final class ServerTransport
         Arr::forget($server, [
             'cdn_settings', 'server_port', 'cert_config', 'custom_outbounds', 'custom_routes',
             'protocol_settings.xray_fallback',
+            'protocol_settings.hy2_settings',
+            'protocol_settings.hy2_draft_invalid',
             'protocol_settings.target_kernel',
             'protocol_settings.reality_settings.private_key',
             'protocol_settings.reality_settings.dest',

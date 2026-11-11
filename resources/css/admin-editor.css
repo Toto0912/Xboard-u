@@ -285,3 +285,6 @@ body:has(:is(.xb-advanced-dialog,[role=dialog]:has(.xb-advanced-head))) [data-ra
   .xb-custom-example{grid-template-columns:1fr;gap:12px}.xb-custom-example>button{justify-self:start}
 }
 @media(prefers-reduced-motion:reduce){:is(.xb-node-dialog,[role=dialog]:has(.xb-node-head)) *,:is(.xb-advanced-dialog,[role=dialog]:has(.xb-advanced-head)) *{transition:none!important;animation:none!important}}
+
+/* Keep the HY2 toolbar aligned despite the editor's general select sizing. */
+:is(.xb-node-dialog,.xb-advanced-dialog,[role=dialog]:has(.xb-node-head),[role=dialog]:has(.xb-advanced-head)) [data-hy2-toolbar] > :is(select,button,a){height:36px;min-height:36px;margin:0;display:inline-flex;align-items:center;box-sizing:border-box;font-size:12px;line-height:1;flex-shrink:0}

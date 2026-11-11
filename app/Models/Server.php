@@ -281,6 +281,7 @@ class Server extends Model
             'plugin_opts' => ['type' => 'string', 'default' => null]
         ],
         self::TYPE_HYSTERIA => [
+            'hy2_settings' => ['type' => 'array', 'default' => null],
             'version' => ['type' => 'integer', 'default' => 2],
             'bandwidth' => [
                 'type' => 'object',
@@ -383,6 +384,9 @@ class Server extends Model
             $settings['xray_fallback'] = ServerFallback::forNode($type, $settings);
         }
         $configs['target_kernel'] = ['type' => 'string', 'default' => null];
+        if ($type === self::TYPE_HYSTERIA) {
+            $settings = \App\Support\Hysteria2Settings::normalize($settings);
+        }
         return \App\Support\ServerTransport::normalize(self::castSettingsWithConfig($settings, $configs));
     }
 

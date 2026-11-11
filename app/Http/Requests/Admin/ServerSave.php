@@ -52,6 +52,7 @@ class ServerSave extends FormRequest
     {
         $validator->after(function ($validator) {
             \App\Support\CustomKernelConfig::validate($validator, $this->all());
+            \App\Support\Hysteria2Settings::validate($validator, $this->all());
             if ($validator->errors()->isNotEmpty()) {
                 return;
             }
@@ -193,6 +194,7 @@ class ServerSave extends FormRequest
             'allow_insecure' => 'nullable|boolean',
         ],
         'hysteria' => [
+            'hy2_settings' => 'nullable|array',
             'version' => 'required|integer',
             'alpn' => 'nullable|string',
             'obfs.open' => 'nullable|boolean',

@@ -25,6 +25,7 @@ function XboardConnectionDraft(form, current) {
   if (current) {
     const saved = current.protocol_settings;
     settings.xray_fallback = saved.xray_fallback;
+    if (saved.hy2_settings) settings.hy2_settings = structuredClone(saved.hy2_settings);
     if (saved.reality_settings || settings.reality_settings) {
       settings.reality_settings = {...settings.reality_settings};
       for (const key of ['private_key', 'dest', 'server_port']) {
@@ -88,6 +89,7 @@ function XboardCdnFields({form, protocol}) {
     if (!enabled && !window.confirm(XboardT('关闭后，节点将使用外层配置。Fallback 将按外层条件带回。'))) return;
     const next = server || XboardConnectionDraft(form);
     if (!enabled) {
+      if (protocol === 'hysteria') form.setValue('protocol_settings.hy2_settings',structuredClone(next.protocol_settings.hy2_settings || null),{shouldDirty:true});
       const fallback = next.protocol_settings.xray_fallback || '';
       const allowed = XboardFallbackAllowed(protocol, client);
       form.setValue('protocol_settings.xray_fallback', allowed ? fallback : '', {shouldDirty: true});
@@ -157,6 +159,7 @@ function XboardCommitAdvanced(outer, draft, protocol, customTouched) {
       gE.error(XboardT('请填写服务端节点地址、连接端口和有效的监听端口。'));
       return false;
     }
+    if (Number(server.protocol_settings.version || 2) === 2 && server.protocol_settings.hy2_draft_invalid) { gE.error(XboardT('请填写有效的 JSON 对象。')); return false; }
     if (server.protocol_settings.transport_draft_invalid) {
       gE.error(XboardT('请先修正服务端传输 JSON。'));
       return false;
