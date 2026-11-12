@@ -2,6 +2,12 @@
 
 ## v2.2.0 — 2026-11-12
 
+- 补齐 Stash 的 VLESS + XHTTP、上下行分离、TLS / Reality 和官方支持的填充参数转换；已知旧版客户端跳过不支持的节点，不能等价转换的配置不降级成 TCP。
+- Stash 同步输出已启用的 VLESS Encryption；XHTTP 上的 Vision 必须同时配置 Encryption。
+- 修复旧版 Clash 默认模板误用 RULE-SET / GEOSITE / AND 等规则导致的导入失败，过滤其不支持的传输与 Reality；补齐 VMess HTTP/2 转换。
+- Clash / Stash 在无兼容节点或正则匹配为空时保留有效分组，避免悬空引用。空组使用内置 DIRECT 策略，不伪造节点。
+- 新增数据迁移，仅替换项目自带的旧 Clash 默认模板并更新订阅缓存代次；保留管理员自定义模板，不改 Mihomo / Stash 默认模板及节点通信。
+
 - 新增 HY2 Masquerade 编辑器、两内核三类完整示例及中英俄文案；兼容 CDN 服务端分离，服务端专用字段不进入客户端订阅。
 - 修正 HY2 面板带宽的客户端 / 服务端方向换算；仅在服务端下发时交换，Hysteria 1 不变。
 - QUIC 窗口、超时、MTU 等继续沿用内核默认值；不新增性能调参入口。

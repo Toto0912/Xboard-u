@@ -6,6 +6,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
+use App\Support\ClashProxyGroups;
 
 class Clash extends AbstractProtocol
 {
@@ -20,6 +21,21 @@ class Clash extends AbstractProtocol
         Server::TYPE_SOCKS,
         Server::TYPE_HTTP,
     ];
+
+    protected function filterServersByVersion()
+    {
+        return array_values(array_filter(parent::filterServersByVersion(), function ($server) {
+            $settings = $server['protocol_settings'] ?? [];
+            $network = $settings['network'] ?? 'tcp';
+            return match ($server['type']) {
+                Server::TYPE_VMESS => (int) ($settings['tls'] ?? 0) !== 2
+                    && in_array($network, ['tcp', 'ws', 'grpc', 'h2'], true),
+                Server::TYPE_TROJAN => (int) ($settings['tls'] ?? 1) === 1
+                    && in_array($network, ['tcp', 'ws', 'grpc'], true),
+                default => true,
+            };
+        }));
+    }
     public function handle()
     {
         $servers = $this->servers;
@@ -66,32 +82,7 @@ class Clash extends AbstractProtocol
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
-        foreach ($config['proxy-groups'] as $k => $v) {
-            if (!is_array($config['proxy-groups'][$k]['proxies']))
-                $config['proxy-groups'][$k]['proxies'] = [];
-            $isFilter = false;
-            foreach ($config['proxy-groups'][$k]['proxies'] as $src) {
-                foreach ($proxies as $dst) {
-                    if (!$this->isRegex($src))
-                        continue;
-                    $isFilter = true;
-                    $config['proxy-groups'][$k]['proxies'] = array_values(array_diff($config['proxy-groups'][$k]['proxies'], [$src]));
-                    if ($this->isMatch($src, $dst)) {
-                        array_push($config['proxy-groups'][$k]['proxies'], $dst);
-                    }
-                }
-                if ($isFilter)
-                    continue;
-            }
-            if ($isFilter)
-                continue;
-            $config['proxy-groups'][$k]['proxies'] = array_merge($config['proxy-groups'][$k]['proxies'], $proxies);
-        }
-
-        $config['proxy-groups'] = array_filter($config['proxy-groups'], function ($group) {
-            return $group['proxies'];
-        });
-        $config['proxy-groups'] = array_values($config['proxy-groups']);
+        $config['proxy-groups'] = ClashProxyGroups::appendNodes($config['proxy-groups'], $proxies);
 
         $config = $this->buildRules($config);
 
@@ -222,6 +213,16 @@ class Clash extends AbstractProtocol
                 if ($serviceName = data_get($protocol_settings, 'network_settings.serviceName'))
                     $array['grpc-opts']['grpc-service-name'] = $serviceName;
                 break;
+            case 'h2':
+                $array['network'] = 'h2';
+                $array['tls'] = true;
+                if ($path = data_get($protocol_settings, 'network_settings.path')) {
+                    $array['h2-opts']['path'] = $path;
+                }
+                if ($host = data_get($protocol_settings, 'network_settings.host')) {
+                    $array['h2-opts']['host'] = is_array($host) ? $host : [$host];
+                }
+                break;
             default:
                 break;
         }
@@ -307,26 +308,5 @@ class Clash extends AbstractProtocol
         }
 
         return $array;
-    }
-
-    private function isMatch($exp, $str)
-    {
-        try {
-            return preg_match($exp, $str) === 1;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    private function isRegex($exp)
-    {
-        if (empty($exp)) {
-            return false;
-        }
-        try {
-            return preg_match($exp, '') !== false;
-        } catch (\Exception $e) {
-            return false;
-        }
     }
 }

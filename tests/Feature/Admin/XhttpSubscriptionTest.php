@@ -187,7 +187,7 @@ class XhttpSubscriptionTest extends TestCase
         $link = base64_decode(is_object($general) ? $general->getContent() : $general);
         $this->assertStringContainsString('extra=', $link);
         $this->assertStringNotContainsString('download-settings', $link);
-        foreach ([SingBox::class, Stash::class] as $class) {
+        foreach ([SingBox::class] as $class) {
             $result = (new $class($user, [$server]))->handle();
             $content = is_object($result) ? $result->getContent() : (string) $result;
             $this->assertStringNotContainsString('download-settings', $content);

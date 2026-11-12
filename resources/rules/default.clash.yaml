@@ -1,138 +1,37 @@
+# Legacy Clash format. Mihomo/Clash Meta and Stash use their own templates.
 mixed-port: 33333
 ipv6: true
 allow-lan: true
 bind-address: '*'
 mode: rule
-log-level: silent
+log-level: warning
 external-controller: 127.0.0.1:9090
-unified-delay: true
-keep-alive-idle: 60
-keep-alive-interval: 10
-keep-alive-probes: 3
-geodata-mode: true
-geodata-loader: standard
-geo-auto-update: true
-geo-update-interval: 24
-geox-url:
-  geoip: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geoip.dat'
-  geosite: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat'
-sniffer:
-  enable: true
-  sniff:
-    TLS:
-      ports: [443, 8443]
-    HTTP:
-      ports: [80, 8080-8880]
-      override-destination: true
-# ================= 1. TUN 模式配置 =================
-tun:
-  enable: true
-  mtu: 1420
-  stack: gvisor
-  dns-hijack:
-    - 'any:53'
-    - 'tcp://any:53'
-  auto-route: true              # 自动设置全局路由，接管系统流量
-  strict-route: true
-  auto-detect-interface: true   # 自动检测出网网卡，防止流量环路
-  route-exclude-address:
-    # --- 常见局域网 IPv4 私有网段 ---
-    - 10.0.0.0/8        # A类私有网络
-    - 172.16.0.0/12     # B类私有网络
-    - 192.168.0.0/16    # C类私有网络（最常见家用路由器网段）
-    # --- 特殊用途及本地保留 IPv4 网段 ---
-    - 127.0.0.0/8       # 本地回环地址
-    - 100.64.0.0/10     # 运营商级 CGNAT 网段
-    - 169.254.0.0/16    # 链路本地地址
-    - 224.0.0.0/4       # IPv4 组播地址
-    - 240.0.0.0/4       # 保留/E类地址（已包含 255.255.255.255）
-    # --- IPv6 本地/链路/组播地址 ---
-    - ::1/128           # IPv6 回环地址
-    - fc00::/7          # IPv6 唯一本地地址 (ULA)
-    - fe80::/10         # IPv6 链路本地地址
-    - ff00::/8          # IPv6 组播地址
-#10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,100.64.0.0/10,169.254.0.0/16,224.0.0.0/4,240.0.0.0/4,::1/128,fc00::/7,fe80::/10,ff00::/8
 
-# ================= 2. DNS 精准分流配置 =================
-# 默认走远程代理 DNS，国内/私有域名走本地本地 DNS
 dns:
   enable: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
-  use-hosts: false
-  use-system-hosts: false
-
   default-nameserver:
-    - '119.29.29.29'
-    - '223.5.5.5'
-
-  proxy-server-nameserver:
-    - '119.29.29.29'
-
-  # 默认 DNS
+    - 119.29.29.29
+    - 223.5.5.5
   nameserver:
-    - 'tls://8.8.4.4#节点选择'
-    - 'tls://1.0.0.1#节点选择'
-
-  nameserver-policy:
-    "+.google.com": "https://dns.cloudflare.com/dns-query"
-    "+.googleapis.com": "https://dns.cloudflare.com/dns-query"
-    "+.googleapis.cn": "https://dns.cloudflare.com/dns-query"
-    "+.googlevideo.com": "https://dns.cloudflare.com/dns-query"
-    "+.gstatic.com": "https://dns.cloudflare.com/dns-query"
-    "+.youtube.com": "https://dns.cloudflare.com/dns-query"
-    "+.youtu.be": "https://dns.cloudflare.com/dns-query"
-    "+.facebook.com": "https://dns.cloudflare.com/dns-query"
-    "+.twitter.com": "https://dns.cloudflare.com/dns-query"
-    "+.x.com": "https://dns.cloudflare.com/dns-query"
-    "+.github.com": "https://dns.cloudflare.com/dns-query"
-    "+.githubusercontent.com": "https://dns.cloudflare.com/dns-query"
-    "+.openai.com": "https://dns.cloudflare.com/dns-query"
-    "+.chatgpt.com": "https://dns.cloudflare.com/dns-query"
-    "+.anthropic.com": "https://dns.cloudflare.com/dns-query"
-
+    - 119.29.29.29
+    - 223.5.5.5
   fallback:
-    - https://dns.cloudflare.com/dns-query
-    - https://dns.google/dns-query
     - tls://1.1.1.1:853
     - tls://8.8.8.8:853
   fallback-filter:
     geoip: true
     geoip-code: CN
     ipcidr:
-      - 0.0.0.0/8
-      - 10.0.0.0/8
-      - 100.64.0.0/10
-      - 127.0.0.0/8
-      - 169.254.0.0/16
-      - 172.16.0.0/12
-      - 192.168.0.0/16
-      - 224.0.0.0/4
       - 240.0.0.0/4
-    domain:
-      - "+.google.com"
-      - "+.facebook.com"
-      - "+.youtube.com"
-      - "+.githubusercontent.com"
-      - "+.googlevideo.com"
-      - "+.googleapis.cn"
-
-  # 排除列表：这些域名不会返回 Fake-IP，直接由本地解析
   fake-ip-filter:
     - '*.lan'
-    - '*.localdomain'
-    - '*.example'
-    - '*.invalid'
-    - '*.localhost'
-    - '*.test'
     - '*.local'
-    - '*.home.arpa'
     - '*.msftconnecttest.com'
     - '*.msftncsi.com'
 
-# ================= 3. 策略组配置 =================
-
-proxies:
+proxies: []
 
 proxy-groups:
   - { name: '节点选择', type: select, proxies: ['自动选择', '故障转移', 'DIRECT'] }
@@ -140,33 +39,18 @@ proxy-groups:
   - { name: '故障转移', type: fallback, proxies: [], url: 'https://www.google.com/generate_204', interval: 180 }
   - { name: '漏网之鱼', type: select, proxies: ['节点选择', 'DIRECT'] }
 
-# ================= 4. 精准分流规则 =================
-rule-providers:
-  reject:
-    type: http
-    behavior: domain
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt'
-    path: ./ruleset/reject.yaml
-    interval: 86400
-  lancidr:
-    type: http
-    behavior: ipcidr
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt'
-    path: ./ruleset/lancidr.yaml
-    interval: 86400
-  cncidr:
-    type: http
-    behavior: ipcidr
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt'
-    path: ./ruleset/cncidr.yaml
-    interval: 86400
-
+# No GEOSITE, AND or RULE-SET: the original open-source Clash rejects them.
 rules:
-  - 'RULE-SET,lancidr,DIRECT,no-resolve'
-  - 'RULE-SET,cncidr,DIRECT,no-resolve'
-  - 'GEOSITE,private,DIRECT'
-  - 'GEOSITE,cn,DIRECT'
-  - 'GEOIP,cn,DIRECT,no-resolve'
-  - 'AND,((DST-PORT,443),(NETWORK,UDP)),REJECT'
-  - 'GEOSITE,geolocation-!cn,节点选择'
+  - 'DOMAIN-SUFFIX,lan,DIRECT'
+  - 'DOMAIN-SUFFIX,local,DIRECT'
+  - 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
+  - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
+  - 'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve'
+  - 'IP-CIDR6,::1/128,DIRECT,no-resolve'
+  - 'IP-CIDR6,fc00::/7,DIRECT,no-resolve'
+  - 'IP-CIDR6,fe80::/10,DIRECT,no-resolve'
+  - 'DOMAIN-SUFFIX,cn,DIRECT'
+  - 'GEOIP,CN,DIRECT,no-resolve'
   - 'MATCH,漏网之鱼'

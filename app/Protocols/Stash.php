@@ -6,7 +6,11 @@ use Symfony\Component\Yaml\Yaml;
 use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use App\Support\AbstractProtocol;
+use App\Support\ClashProxyGroups;
 use App\Models\Server;
+use App\Support\StashXhttp;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 
 class Stash extends AbstractProtocol
 {
@@ -86,6 +90,41 @@ class Stash extends AbstractProtocol
     const CUSTOM_CLASH_TEMPLATE_FILE = 'resources/rules/custom.clash.yaml';
     const DEFAULT_TEMPLATE_FILE = 'resources/rules/default.clashmeta.yaml';
 
+    protected function isCompatible($server)
+    {
+        $xhttp = data_get($server, 'protocol_settings.network') === 'xhttp';
+        $encryption = data_get($server, 'protocol_settings.encryption.enabled');
+        $modernVless = ($server['type'] ?? null) === Server::TYPE_VLESS && ($xhttp || $encryption);
+        // A versionless explicit Stash export uses the current VLESS schema.
+        // Keep existing global exclusions and legacy protocol handling intact.
+        if (!($modernVless && blank($this->clientVersion)) && !parent::isCompatible($server)) {
+            return false;
+        }
+        if ($xhttp && ($server['type'] ?? null) !== Server::TYPE_VLESS) {
+            return false; // Stash only documents XHTTP for VLESS.
+        }
+        if (($xhttp || $encryption) && !$this->supportsModernVless()) {
+            return false;
+        }
+        return true;
+    }
+
+    private function supportsModernVless(): bool
+    {
+        // A manually selected format without a version exports the current schema.
+        if (blank($this->clientVersion)) {
+            return true;
+        }
+        $mac = preg_match('/mac(?:os|intosh)?/i', $this->userAgent ?? '') === 1;
+        // Stash's macOS product uses the 4.x version line, including Stash/4.2
+        // user agents that omit an OS identifier. Explicit iOS/tvOS wins.
+        if (!preg_match('/(?:ios|iphone|ipad|tvos)/i', $this->userAgent ?? '')) {
+            $mac = $mac || str_starts_with($this->clientVersion, '4.');
+        }
+        $version = implode('.', array_pad(explode('.', $this->clientVersion), 3, '0'));
+        return version_compare($version, $mac ? '4.3.0' : '3.6.0', '>=');
+    }
+
     public function handle()
     {
         $servers = $this->servers;
@@ -108,8 +147,10 @@ class Stash extends AbstractProtocol
                 array_push($proxies, $item['name']);
             }
             if ($item['type'] === Server::TYPE_VLESS) {
-                array_push($proxy, $this->buildVless($item['password'], $item));
-                array_push($proxies, $item['name']);
+                if ($node = $this->buildVless($item['password'], $item)) {
+                    $proxy[] = $node;
+                    $proxies[] = $item['name'];
+                }
             }
             if ($item['type'] === Server::TYPE_HYSTERIA) {
                 array_push($proxy, self::buildHysteria($item['password'], $item));
@@ -138,38 +179,14 @@ class Stash extends AbstractProtocol
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
-        foreach ($config['proxy-groups'] as $k => $v) {
-            if (!is_array($config['proxy-groups'][$k]['proxies']))
-                $config['proxy-groups'][$k]['proxies'] = [];
-            $isFilter = false;
-            foreach ($config['proxy-groups'][$k]['proxies'] as $src) {
-                foreach ($proxies as $dst) {
-                    if (!$this->isRegex($src))
-                        continue;
-                    $isFilter = true;
-                    $config['proxy-groups'][$k]['proxies'] = array_values(array_diff($config['proxy-groups'][$k]['proxies'], [$src]));
-                    if ($this->isMatch($src, $dst)) {
-                        array_push($config['proxy-groups'][$k]['proxies'], $dst);
-                    }
-                }
-                if ($isFilter)
-                    continue;
-            }
-            if ($isFilter)
-                continue;
-            $config['proxy-groups'][$k]['proxies'] = array_merge($config['proxy-groups'][$k]['proxies'], $proxies);
-        }
-        $config['proxy-groups'] = array_filter($config['proxy-groups'], function ($group) {
-            return $group['proxies'];
-        });
-        $config['proxy-groups'] = array_values($config['proxy-groups']);
+        $config['proxy-groups'] = ClashProxyGroups::appendNodes($config['proxy-groups'], $proxies);
         // Force the current subscription domain to be a direct rule
         $subsDomain = request()->header('Host');
         if ($subsDomain) {
             array_unshift($config['rules'], "DOMAIN,{$subsDomain},DIRECT");
         }
 
-        $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
+        $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_OBJECT_AS_MAP);
         $yaml = str_replace('$app_name', admin_setting('app_name', 'XBoard'), $yaml);
         return response($yaml)
             ->header('content-type', 'text/yaml')
@@ -305,6 +322,17 @@ class Stash extends AbstractProtocol
         $array['uuid'] = $uuid;
         $array['udp'] = true;
 
+        if (data_get($protocol_settings, 'encryption.enabled')) {
+            $encryption = data_get($protocol_settings, 'encryption.encryption');
+            if (!$this->supportsModernVless() || !is_string($encryption) || $encryption === '') {
+                return null;
+            }
+            $array['encryption'] = $encryption;
+        }
+        if ($flow = data_get($protocol_settings, 'flow')) {
+            $array['flow'] = $flow;
+        }
+
         if ($fingerprint = Helper::getTlsFingerprint(data_get($protocol_settings, 'utls'))) {
             $array['client-fingerprint'] = $fingerprint;
         }
@@ -334,6 +362,38 @@ class Stash extends AbstractProtocol
         }
 
         switch (data_get($protocol_settings, 'network')) {
+            case 'xhttp':
+            case 'splithttp':
+                try {
+                    if (!$this->supportsModernVless()) {
+                        return null;
+                    }
+                    if (!empty($array['flow']) && empty($array['encryption'])) {
+                        throw new InvalidArgumentException('Stash XHTTP Vision requires VLESS Encryption');
+                    }
+                    $settings = data_get($protocol_settings, 'network_settings', []);
+                    if (!is_array($settings)) {
+                        throw new InvalidArgumentException('XHTTP settings must be a JSON object');
+                    }
+                    $array['network'] = 'xhttp';
+                    $array['xhttp-opts'] = StashXhttp::convert($settings) ?: new \stdClass();
+                    if ((int) data_get($protocol_settings, 'tls') === 1) {
+                        $array['skip-cert-verify'] = (bool) ($array['skip-cert-verify'] ?? false);
+                        if ($sni = data_get($protocol_settings, 'tls_settings.server_name')) {
+                            $array['sni'] = $sni;
+                        }
+                        if ($alpn = data_get($protocol_settings, 'tls_settings.alpn')) {
+                            $array['alpn'] = $alpn;
+                        }
+                    }
+                } catch (InvalidArgumentException $e) {
+                    Log::warning('Skipped incompatible Stash XHTTP node', [
+                        'node_id' => $server['id'] ?? null,
+                        'reason' => str_replace('Mihomo', 'Stash', $e->getMessage()),
+                    ]);
+                    return null;
+                }
+                break;
             case 'tcp':
                 $headerType = data_get($protocol_settings, 'network_settings.header.type', 'tcp');
                 $array['network'] = ($headerType === 'http') ? 'http' : 'tcp';
@@ -564,26 +624,5 @@ class Stash extends AbstractProtocol
         }
 
         return $array;
-    }
-
-    private function isRegex($exp)
-    {
-        if (empty($exp)) {
-            return false;
-        }
-        try {
-            return preg_match($exp, '') !== false;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    private function isMatch($exp, $str)
-    {
-        try {
-            return preg_match($exp, $str);
-        } catch (\Exception $e) {
-            return false;
-        }
     }
 }

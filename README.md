@@ -6,6 +6,7 @@
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
+- v2.2.0 补齐 [Stash XHTTP 订阅](docs/二次开发功能说明.md#stash-xhttp-订阅v220)，修复 [旧版 Clash 默认模板及空节点分组](docs/二次开发功能说明.md#旧版-clash-订阅兼容v220)。
 - v2.2.0 修复 HY2 带宽映射，新增自动 BBR / Brutal 协商及 Masquerade，详见 [HY2 配置说明](docs/HYSTERIA2.md)。
 - v2.1.2 修复 CDN 分离后的监听端口显示，并将 Xray 自定义出站和路由的生成示例与文档对齐。
 - v2.1.1 为 Mihomo / Clash Meta、Stash 输出的 Reality 订阅自动启用 X25519MLKEM768 密钥交换选项。
