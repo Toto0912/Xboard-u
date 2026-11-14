@@ -81,7 +81,7 @@ class ClientController extends Controller
             'servers' => $serversFiltered,
             'clientName' => $clientInfo['name'] ?? null,
             'clientVersion' => $clientInfo['version'] ?? null,
-            'userAgent' => $clientInfo['flag'] ?? null
+            'userAgent' => $request->header('User-Agent', $clientInfo['flag'] ?? '')
         ]);
 
         return $protocolInstance->handle();
@@ -181,6 +181,13 @@ class ClientController extends Controller
             if (preg_match('/\/v?(\d+(?:\.\d+){0,2})/', $flag, $matches)) {
                 $clientVersion = $matches[1];
             }
+        }
+
+        // A managed Surge URL pins the output format with flag=surge. Its
+        // actual version still comes from the client's User-Agent on refresh.
+        if ($clientName === 'surge' && !$clientVersion
+            && preg_match('/surge(?:[ _-]*mac)?[\/\s]+v?(\d+(?:\.\d+){0,2})/i', $request->header('User-Agent', ''), $matches)) {
+            $clientVersion = $matches[1];
         }
 
         return [

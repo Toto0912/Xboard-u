@@ -36,29 +36,32 @@ tun:
   strict-route: true
   auto-detect-interface: true   # 自动检测出网网卡，防止流量环路
   route-exclude-address:
-    # --- 常见局域网 IPv4 私有网段 ---
-    - 10.0.0.0/8        # A类私有网络
-    - 172.16.0.0/12     # B类私有网络
-    - 192.168.0.0/16    # C类私有网络（最常见家用路由器网段）
-    # --- 特殊用途及本地保留 IPv4 网段 ---
-    - 127.0.0.0/8       # 本地回环地址
-    - 100.64.0.0/10     # 运营商级 CGNAT 网段
-    - 169.254.0.0/16    # 链路本地地址
-    - 224.0.0.0/4       # IPv4 组播地址
-    - 240.0.0.0/4       # 保留/E类地址（已包含 255.255.255.255）
-    # --- IPv6 本地/链路/组播地址 ---
-    - ::1/128           # IPv6 回环地址
-    - fc00::/7          # IPv6 唯一本地地址 (ULA)
-    - fe80::/10         # IPv6 链路本地地址
-    - ff00::/8          # IPv6 组播地址
-#10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,100.64.0.0/10,169.254.0.0/16,224.0.0.0/4,240.0.0.0/4,::1/128,fc00::/7,fe80::/10,ff00::/8
+    - 192.168.0.0/16
+    - fc00::/7
 
 # ================= 2. DNS 精准分流配置 =================
 # 默认走远程代理 DNS，国内/私有域名走本地本地 DNS
 dns:
   enable: true
   enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
+  fake-ip-range: 198.18.0.0/15
+  fake-ip-range6: 2001:2::/48
+
+  fake-ip-filter-mode: rule
+  fake-ip-filter:
+    # 复用已有的直连域名规则集
+    - 'RULE-SET,applications,real-ip'
+    - 'RULE-SET,direct,real-ip'
+
+    # 本地域名返回真实解析结果
+    - 'DOMAIN-SUFFIX,lan,real-ip'
+    - 'DOMAIN-SUFFIX,local,real-ip'
+    - 'DOMAIN-SUFFIX,localdomain,real-ip'
+    - 'DOMAIN-SUFFIX,localhost,real-ip'
+    - 'DOMAIN-SUFFIX,home.arpa,real-ip'
+
+    # 其余域名返回 Fake-IP
+    - 'MATCH,fake-ip'
   use-hosts: false
   use-system-hosts: false
 
@@ -83,19 +86,6 @@ dns:
       - 'tls://8.8.8.8#节点选择'
       - 'tls://1.1.1.1#节点选择'
 
-  # 排除列表：这些域名不会返回 Fake-IP，直接由本地解析
-  fake-ip-filter:
-    - '*.lan'
-    - '*.localdomain'
-    - '*.example'
-    - '*.invalid'
-    - '*.localhost'
-    - '*.test'
-    - '*.local'
-    - '*.home.arpa'
-    - '*.msftconnecttest.com'
-    - '*.msftncsi.com'
-    
 # ================= 3. 策略组配置 =================
 proxies:
 

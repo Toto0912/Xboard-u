@@ -2,10 +2,11 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前版本：**v2.2.0**，配套节点端 xboard-node-u v2.2.0。
+当前版本：**v2.2.1**，配套节点端 xboard-node-u v2.2.1。
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
+- v2.2.1 完善 [新版 Surge 订阅](docs/二次开发功能说明.md#surge-新版订阅)，更新 sing-box、Clash Premium、Clash Meta / Stash 默认模板。
 - v2.2.0 补齐 [Stash XHTTP 订阅](docs/二次开发功能说明.md#stash-xhttp-订阅v220)，修复 [旧版 Clash 默认模板及空节点分组](docs/二次开发功能说明.md#旧版-clash-订阅兼容v220)。
 - v2.2.0 修复 HY2 带宽映射，新增自动 BBR / Brutal 协商及 Masquerade，详见 [HY2 配置说明](docs/HYSTERIA2.md)。
 - v2.1.2 修复 CDN 分离后的监听端口显示，并将 Xray 自定义出站和路由的生成示例与文档对齐。

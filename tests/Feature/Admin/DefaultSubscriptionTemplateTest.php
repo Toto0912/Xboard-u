@@ -13,6 +13,22 @@ class DefaultSubscriptionTemplateTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        foreach (['singbox', 'clash', 'clashmeta', 'stash', 'surge'] as $name) {
+            SubscribeTemplate::flushCache($name);
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        foreach (['singbox', 'clash', 'clashmeta', 'stash', 'surge'] as $name) {
+            SubscribeTemplate::flushCache($name);
+        }
+        parent::tearDown();
+    }
+
     private function defaults(): array
     {
         return ['singbox' => 'default.sing-box.json', 'clash' => 'default.clash.yaml',
@@ -58,5 +74,41 @@ class DefaultSubscriptionTemplateTest extends TestCase
         } finally {
             Cache::store('redis')->forget('subscribe_template:singbox');
         }
+    }
+
+    public function test_refresh_migration_replaces_only_known_defaults_and_clears_previous_cache_generation(): void
+    {
+        $defaults = ['surge' => 'default.surge.conf'] + $this->defaults();
+        $migration = require database_path('migrations/2026_11_14_000001_refresh_subscription_defaults.php');
+        foreach ($defaults as $name => $file) {
+            $legacy = file_get_contents(base_path('tests/Fixtures/subscription-defaults-20261112/' . $file));
+            foreach ([$legacy, str_replace("\n", "\r\n", str_replace("\r\n", "\n", $legacy))] as $content) {
+                SubscribeTemplate::setContent($name, $content);
+                $migration->up();
+                SubscribeTemplate::flushCache($name);
+                $this->assertSame(file_get_contents(base_path('resources/rules/' . $file)), SubscribeTemplate::getContent($name));
+            }
+            SubscribeTemplate::setContent($name, 'custom administrator template: ' . $name);
+            $migration->up();
+            $this->assertSame('custom administrator template: ' . $name, SubscribeTemplate::getContent($name));
+        }
+        Cache::store('redis')->put('subscribe_template:v20261112:surge', 'old cached surge template', 60);
+        try {
+            $this->assertSame('custom administrator template: surge', SubscribeTemplate::getContent('surge'));
+        } finally {
+            Cache::store('redis')->forget('subscribe_template:v20261112:surge');
+        }
+    }
+
+    public function test_premium_clash_quic_shortcut_is_defined_and_shared_stash_template_is_identical(): void
+    {
+        $clash = Yaml::parse(SubscribeTemplate::getContent('clash'));
+        $this->assertSame('normal', $clash['dns']['enhanced-mode']);
+        $this->assertSame("network == 'udp' and dst_port == 443", $clash['script']['shortcuts']['quic']);
+        $this->assertContains('SCRIPT,quic,REJECT,no-resolve', $clash['rules']);
+        $this->assertSame(SubscribeTemplate::getContent('clashmeta'), SubscribeTemplate::getContent('stash'));
+        $singbox = json_decode(SubscribeTemplate::getContent('singbox'), true, flags: JSON_THROW_ON_ERROR);
+        $this->assertSame('127.0.0.1', $singbox['inbounds'][0]['listen']);
+        $this->assertSame('2001:2::1/126', $singbox['inbounds'][1]['address'][1]);
     }
 }

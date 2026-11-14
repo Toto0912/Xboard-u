@@ -218,6 +218,30 @@ class SingBox extends AbstractProtocol
         unset($outbound);
 
         $outbounds = array_merge($outbounds, $proxies);
+        // Keep template references valid when a subscription contains no usable
+        // nodes or a group filter matches none. Never fabricate a proxy node.
+        $directTag = null;
+        foreach ($outbounds as $entry) {
+            if ($entry['type'] === 'direct') {
+                $directTag = $entry['tag'];
+                break;
+            }
+        }
+        $newDirectTag = 'xboard-empty-direct';
+        while (in_array($newDirectTag, array_column($outbounds, 'tag'), true)) {
+            $newDirectTag .= '-fallback';
+        }
+        $needsDirect = false;
+        foreach ($outbounds as &$outbound) {
+            if (in_array($outbound['type'], ['selector', 'urltest'], true) && empty($outbound['outbounds'])) {
+                $outbound['outbounds'] = [$directTag ?? $newDirectTag];
+                $needsDirect = $directTag === null;
+            }
+        }
+        unset($outbound);
+        if ($needsDirect) {
+            $outbounds[] = ['type' => 'direct', 'tag' => $newDirectTag];
+        }
         $this->config['outbounds'] = $outbounds;
         return $outbounds;
     }

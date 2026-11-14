@@ -1,5 +1,14 @@
 # 更新记录
 
+## v2.2.1 — 2026-11-14
+
+- 完善 Surge VLESS / REALITY / Vision / Encryption / XHTTP、Trojan WebSocket、TUIC 和 HY2 参数转换，按客户端版本过滤已知不支持的 VLESS，修复空组、节点重名和配置值转义。
+- Surge 忽略 XHTTP `downloadSettings` 并保留原节点，使用同一端点收发；Mihomo / Stash 的独立下行转换不受影响。
+- 采用当前官方语法整理 Surge 默认模板，使用持续更新的 Loyalsoldier 规则集。
+- 替换提供的 sing-box 1.14、Clash Premium、Clash Meta / Stash 默认模板，补齐 Premium `quic` 快捷脚本，并以 `normal` 保留 Real-IP DNS 模式；Clash Premium 默认模板不再面向免费开源版 Clash。
+- 新增默认模板迁移，只更新未修改的已知旧默认内容，保留管理员自定义模板，并切换订阅缓存代次。
+- 修复 Sing-box 空 selector / urltest、Clash Meta 删除空组留下悬空引用的问题，确保新模板无可用节点时仍可加载。
+
 ## v2.2.0 — 2026-11-12
 
 - 补齐 Stash 的 VLESS + XHTTP、上下行分离、TLS / Reality 和官方支持的填充参数转换；已知旧版客户端跳过不支持的节点，不能等价转换的配置不降级成 TCP。

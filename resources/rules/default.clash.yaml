@@ -1,56 +1,124 @@
-# Legacy Clash format. Mihomo/Clash Meta and Stash use their own templates.
 mixed-port: 33333
 ipv6: true
 allow-lan: true
 bind-address: '*'
 mode: rule
-log-level: warning
+log-level: silent
 external-controller: 127.0.0.1:9090
 
+# 原版 Premium 的 TLS SNI 嗅探选项
+experimental:
+  sniff-tls-sni: true
+
+# TUN 配置
+tun:
+  enable: true
+  stack: gvisor
+  dns-hijack:
+    - 'any:53'
+    - 'tcp://any:53'
+  auto-route: true
+  auto-detect-interface: true
+
+# DNS：保持 Real-IP 模式；Clash Premium 使用 normal，不接受 redir-host。
 dns:
   enable: true
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
+  ipv6: true
+  enhanced-mode: normal
+  use-hosts: false
+
   default-nameserver:
-    - 119.29.29.29
-    - 223.5.5.5
+    - '119.29.29.29'
+    - '223.5.5.5'
+
+  # 原版上游 DNS 直接连接
   nameserver:
-    - 119.29.29.29
-    - 223.5.5.5
-  fallback:
-    - tls://1.1.1.1:853
-    - tls://8.8.8.8:853
-  fallback-filter:
-    geoip: true
-    geoip-code: CN
-    ipcidr:
-      - 240.0.0.0/4
-  fake-ip-filter:
-    - '*.lan'
-    - '*.local'
-    - '*.msftconnecttest.com'
-    - '*.msftncsi.com'
+    - 'tls://8.8.4.4'
+    - 'tls://1.0.0.1'
 
 proxies: []
 
 proxy-groups:
-  - { name: '节点选择', type: select, proxies: ['自动选择', '故障转移', 'DIRECT'] }
-  - { name: '自动选择', type: url-test, proxies: [], url: 'https://www.google.com/generate_204', interval: 180, tolerance: 150 }
-  - { name: '故障转移', type: fallback, proxies: [], url: 'https://www.google.com/generate_204', interval: 180 }
-  - { name: '漏网之鱼', type: select, proxies: ['节点选择', 'DIRECT'] }
+  - name: '节点选择'
+    type: select
+    proxies:
+      - '自动选择'
+      - '故障转移'
+      - DIRECT
 
-# No GEOSITE, AND or RULE-SET: the original open-source Clash rejects them.
+  - name: '自动选择'
+    type: url-test
+    proxies: []
+    url: 'https://www.google.com/generate_204'
+    interval: 180
+    tolerance: 150
+
+  - name: '故障转移'
+    type: fallback
+    proxies: []
+    url: 'https://www.google.com/generate_204'
+    interval: 180
+
+  - name: '漏网之鱼'
+    type: select
+    proxies:
+      - '节点选择'
+      - DIRECT
+
+rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt'
+    path: ./ruleset/reject.yaml
+    interval: 86400
+
+  applications:
+    type: http
+    behavior: classical
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt'
+    path: ./ruleset/applications.yaml
+    interval: 86400
+
+  direct:
+    type: http
+    behavior: domain
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt'
+    path: ./ruleset/direct.yaml
+    interval: 86400
+
+  proxy:
+    type: http
+    behavior: domain
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt'
+    path: ./ruleset/proxy.yaml
+    interval: 86400
+
+  lancidr:
+    type: http
+    behavior: ipcidr
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt'
+    path: ./ruleset/lancidr.yaml
+    interval: 86400
+
+  cncidr:
+    type: http
+    behavior: ipcidr
+    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt'
+    path: ./ruleset/cncidr.yaml
+    interval: 86400
+
+# Clash Premium SCRIPT rules require a named shortcut.
+script:
+  shortcuts:
+    quic: network == 'udp' and dst_port == 443
+
 rules:
-  - 'DOMAIN-SUFFIX,lan,DIRECT'
-  - 'DOMAIN-SUFFIX,local,DIRECT'
-  - 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve'
-  - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
-  - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
-  - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
-  - 'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve'
-  - 'IP-CIDR6,::1/128,DIRECT,no-resolve'
-  - 'IP-CIDR6,fc00::/7,DIRECT,no-resolve'
-  - 'IP-CIDR6,fe80::/10,DIRECT,no-resolve'
-  - 'DOMAIN-SUFFIX,cn,DIRECT'
-  - 'GEOIP,CN,DIRECT,no-resolve'
+  - 'RULE-SET,applications,DIRECT'
+  - 'RULE-SET,direct,DIRECT'
+  - 'RULE-SET,lancidr,DIRECT,no-resolve'
+  - 'RULE-SET,cncidr,DIRECT,no-resolve'
+  - 'GEOIP,cn,DIRECT,no-resolve'
+  - 'SCRIPT,quic,REJECT,no-resolve'
+  - 'RULE-SET,proxy,节点选择'
   - 'MATCH,漏网之鱼'

@@ -1,0 +1,56 @@
+# Legacy Clash format. Mihomo/Clash Meta and Stash use their own templates.
+mixed-port: 33333
+ipv6: true
+allow-lan: true
+bind-address: '*'
+mode: rule
+log-level: warning
+external-controller: 127.0.0.1:9090
+
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver:
+    - 119.29.29.29
+    - 223.5.5.5
+  nameserver:
+    - 119.29.29.29
+    - 223.5.5.5
+  fallback:
+    - tls://1.1.1.1:853
+    - tls://8.8.8.8:853
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    ipcidr:
+      - 240.0.0.0/4
+  fake-ip-filter:
+    - '*.lan'
+    - '*.local'
+    - '*.msftconnecttest.com'
+    - '*.msftncsi.com'
+
+proxies: []
+
+proxy-groups:
+  - { name: '节点选择', type: select, proxies: ['自动选择', '故障转移', 'DIRECT'] }
+  - { name: '自动选择', type: url-test, proxies: [], url: 'https://www.google.com/generate_204', interval: 180, tolerance: 150 }
+  - { name: '故障转移', type: fallback, proxies: [], url: 'https://www.google.com/generate_204', interval: 180 }
+  - { name: '漏网之鱼', type: select, proxies: ['节点选择', 'DIRECT'] }
+
+# No GEOSITE, AND or RULE-SET: the original open-source Clash rejects them.
+rules:
+  - 'DOMAIN-SUFFIX,lan,DIRECT'
+  - 'DOMAIN-SUFFIX,local,DIRECT'
+  - 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
+  - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
+  - 'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve'
+  - 'IP-CIDR6,::1/128,DIRECT,no-resolve'
+  - 'IP-CIDR6,fc00::/7,DIRECT,no-resolve'
+  - 'IP-CIDR6,fe80::/10,DIRECT,no-resolve'
+  - 'DOMAIN-SUFFIX,cn,DIRECT'
+  - 'GEOIP,CN,DIRECT,no-resolve'
+  - 'MATCH,漏网之鱼'

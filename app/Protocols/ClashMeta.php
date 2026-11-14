@@ -7,6 +7,7 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
+use App\Support\ClashProxyGroups;
 use App\Support\MihomoXhttp;
 use Illuminate\Support\Facades\Log;
 
@@ -201,31 +202,7 @@ class ClashMeta extends AbstractProtocol
         }
 
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
-        foreach ($config['proxy-groups'] as $k => $v) {
-            if (!is_array($config['proxy-groups'][$k]['proxies']))
-                $config['proxy-groups'][$k]['proxies'] = [];
-            $isFilter = false;
-            foreach ($config['proxy-groups'][$k]['proxies'] as $src) {
-                foreach ($proxies as $dst) {
-                    if (!$this->isRegex($src))
-                        continue;
-                    $isFilter = true;
-                    $config['proxy-groups'][$k]['proxies'] = array_values(array_diff($config['proxy-groups'][$k]['proxies'], [$src]));
-                    if ($this->isMatch($src, $dst)) {
-                        array_push($config['proxy-groups'][$k]['proxies'], $dst);
-                    }
-                }
-                if ($isFilter)
-                    continue;
-            }
-            if ($isFilter)
-                continue;
-            $config['proxy-groups'][$k]['proxies'] = array_merge($config['proxy-groups'][$k]['proxies'], $proxies);
-        }
-        $config['proxy-groups'] = array_filter($config['proxy-groups'], function ($group) {
-            return $group['proxies'];
-        });
-        $config['proxy-groups'] = array_values($config['proxy-groups']);
+        $config['proxy-groups'] = ClashProxyGroups::appendNodes($config['proxy-groups'], $proxies);
         $config = $this->buildRules($config);
 
         $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_OBJECT_AS_MAP);
@@ -757,27 +734,6 @@ class ClashMeta extends AbstractProtocol
         }
 
         return $array;
-    }
-
-    private function isMatch($exp, $str)
-    {
-        try {
-            return preg_match($exp, $str) === 1;
-        } catch (\Exception $e) {
-            return false;
-        }
-    }
-
-    private function isRegex($exp)
-    {
-        if (empty($exp)) {
-            return false;
-        }
-        try {
-            return preg_match($exp, '') !== false;
-        } catch (\Exception $e) {
-            return false;
-        }
     }
 
     protected static function appendMultiplex(&$array, $protocol_settings)

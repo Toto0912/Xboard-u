@@ -9,7 +9,7 @@
         {
             "type": "mixed",
             "tag": "mixed-in",
-            "listen": "0.0.0.0",
+            "listen": "127.0.0.1",
             "listen_port": 23333,
             "tcp_fast_open": false,
             "tcp_multi_path": false,
@@ -20,27 +20,28 @@
             "tag": "tun-in",
             "interface_name": "sing-tun",
             "address": [
-                "172.18.0.1/30"
+                "198.18.0.1/30",
+                "2001:2::1/126"
             ],
             "mtu": 1420,
             "auto_route": true,
             "strict_route": true,
+            "auto_redirect": true,
             "endpoint_independent_nat": true,
             "stack": "gvisor",
-			"route_exclude_address": [
-				"10.0.0.0/8",
-				"172.16.0.0/12",
-				"192.168.0.0/16",
-				"127.0.0.0/8",
-				"100.64.0.0/10",
-				"169.254.0.0/16",
-				"224.0.0.0/4",
-				"240.0.0.0/4",
-				"::1/128",
-				"fc00::/7",
-				"fe80::/10",
-				"ff00::/8"
-			]
+            "route_exclude_address": [
+                "10.0.0.0/8",
+                "172.16.0.0/12",
+                "192.168.0.0/16",
+                "127.0.0.0/8",
+                "100.64.0.0/10",
+                "169.254.0.0/16",
+                "224.0.0.0/4",
+                "240.0.0.0/4",
+                "::1/128",
+                "fe80::/10",
+                "ff00::/8"
+            ]
         }
     ],
     "outbounds": [
@@ -94,30 +95,47 @@
             "tag": "direct"
         }
     ],
-	"http_clients": [
-		{
-			"tag": "default-http",
-			"engine": "go",
-			"headers": {
-				"User-Agent": "sing-box"
-			},
-			"tls": {
-				"enabled": true
-			},
-			"detour": "🚀 节点选择"
-			}
-	],
+    "http_clients": [
+        {
+            "tag": "default-http",
+            "engine": "go",
+            "headers": {
+                "User-Agent": "sing-box"
+            },
+            "tls": {
+                "enabled": true
+            },
+            "detour": "🚀 节点选择"
+        }
+    ],
     "route": {
         "rules": [
             {
-                "action": "sniff",
-                "inbound": "tun-in"
+                "type": "logical",
+                "mode": "and",
+                "rules": [
+                    {
+                        "default_interface_address": [
+                            "2000::/3"
+                        ],
+                        "invert": true
+                    },
+                    {
+                        "ip_version": 6
+                    }
+                ],
+                "action": "reject",
+                "method": "default",
+                "no_drop": true
             },
-			{
+            {
+                "action": "sniff"
+            },
+            {
                 "action": "reject",
                 "protocol": [
                     "bittorrent",
-					"quic"
+                    "quic"
                 ]
             },
             {
@@ -170,7 +188,7 @@
                 "outbound": "🚀 节点选择"
             }
         ],
-		"default_http_client": "default-http",
+        "default_http_client": "default-http",
         "rule_set": [
             {
                 "tag": "GeoIP-Private",
@@ -224,8 +242,8 @@
             {
                 "tag": "Fake-IP",
                 "type": "fakeip",
-                "inet4_range": "198.18.0.0/15",
-                "inet6_range": "fc00::/18"
+                "inet4_range": "198.19.0.0/16",
+                "inet6_range": "2001:2:0:1::/64"
             },
             {
                 "tag": "Local-DNS",
@@ -271,7 +289,8 @@
             {
                 "action": "route",
                 "rule_set": [
-                    "GeoSite-CN"
+                    "GeoSite-CN",
+                    "GeoSite-Private"
                 ],
                 "server": "Local-DNS"
             },
@@ -312,6 +331,7 @@
                 "server": "Remote-DNS"
             }
         ],
+        "strategy": "prefer_ipv4",
         "disable_cache": false,
         "disable_expire": false,
         "independent_cache": false,
