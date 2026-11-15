@@ -6,18 +6,11 @@
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
-- v2.2.1 完善 [新版 Surge 订阅](docs/二次开发功能说明.md#surge-新版订阅)，更新 sing-box、Clash Premium、Clash Meta / Stash 默认模板。
-- v2.2.0 补齐 [Stash XHTTP 订阅](docs/二次开发功能说明.md#stash-xhttp-订阅v220)，修复 [旧版 Clash 默认模板及空节点分组](docs/二次开发功能说明.md#旧版-clash-订阅兼容v220)。
-- v2.2.0 修复 HY2 带宽映射，新增自动 BBR / Brutal 协商及 Masquerade，详见 [HY2 配置说明](docs/HYSTERIA2.md)。
-- v2.1.2 修复 CDN 分离后的监听端口显示，并将 Xray 自定义出站和路由的生成示例与文档对齐。
-- v2.1.1 为 Mihomo / Clash Meta、Stash 输出的 Reality 订阅自动启用 X25519MLKEM768 密钥交换选项。
-- v2.1.0 优化设备同步、Redis、队列和数据库批量写入，修复重连时的设备状态清理，并默认下发 IPv4/IPv6 双栈监听。
-- v2.0.0 新增 [CDN 套用](docs/二次开发功能说明.md#cdn-套用v200)，允许分别配置订阅入口和节点监听。
-
+- v2.1.1 推送到 Mihomo 内核代理工具的 Reality 订阅将自动启用 X25519MLKEM768 密钥交换选项，以兼容新版 Xray 内核。
+- v2.0.0 新增高级配置：[CDN 套用](docs/二次开发功能说明.md#v200)。推送到客户端的订阅、推送到服务端的参数可以分别设置。
 - v1.1.3 支持 Sing-box / Xray 原生自定义出站和路由，兼容旧面板出站格式。
-- 新增 Fallback 配置，TLS / Reality 均使用 Xray 原生协议层回落，保留 Reality 原目标。
-- v1.1.1 补齐 Clash Meta / Mihomo 的 XHTTP 上下行分离订阅转换，详见[配置说明](docs/二次开发功能说明.md#xhttp-上下行分离订阅v111)。
-- 修复 TLS 内容推送保存，适配 xboard-node-u 安装，并更新默认订阅模板。
+- v1.1.2 新增 [Fallback 回落](docs/二次开发功能说明.md#v112)功能。
+- v1.1.1 补齐 Clash Meta / Mihomo 的 [XHTTP 上下行分离订阅转换](docs/二次开发功能说明.md#v111)。
 
 ## 🚀 Quick Start
 
