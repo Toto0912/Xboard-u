@@ -355,9 +355,7 @@ class Surge extends AbstractProtocol
             }
         }
         $options = ['port-hopping' => str_replace(':', '-', implode(';', $ports))];
-        if (!empty($settings['hop_interval'])) {
-            $options['port-hopping-interval'] = (int) $settings['hop_interval'];
-        }
+        $options['port-hopping-interval'] = \App\Support\Hysteria2PortHopping::interval($settings);
         return $options;
     }
 

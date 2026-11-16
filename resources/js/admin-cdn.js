@@ -36,6 +36,10 @@ function XboardConnectionDraft(form, current) {
       }
     }
   }
+  if (form.getValues('type') === 'hysteria' && Number(settings.version || 2) === 2) {
+    const listen = XboardHY2Range(form.getValues('server_port'));
+    settings.hy2_settings = {...settings.hy2_settings,port_range:listen && listen[0] !== listen[1] ? XboardHY2RangeText(listen) : null};
+  }
   return {
     host: form.getValues('host'),
     port: form.getValues('port'),
@@ -89,7 +93,10 @@ function XboardCdnFields({form, protocol}) {
     if (!enabled && !window.confirm(XboardT('关闭后，节点将使用外层配置。Fallback 将按外层条件带回。'))) return;
     const next = server || XboardConnectionDraft(form);
     if (!enabled) {
-      if (protocol === 'hysteria') form.setValue('protocol_settings.hy2_settings',structuredClone(next.protocol_settings.hy2_settings || null),{shouldDirty:true});
+      if (protocol === 'hysteria') {
+        const originalRange = form.getValues('protocol_settings.hy2_settings.port_range');
+        form.setValue('protocol_settings.hy2_settings',{...structuredClone(next.protocol_settings.hy2_settings || {}),port_range:originalRange || null},{shouldDirty:true});
+      }
       const fallback = next.protocol_settings.xray_fallback || '';
       const allowed = XboardFallbackAllowed(protocol, client);
       form.setValue('protocol_settings.xray_fallback', allowed ? fallback : '', {shouldDirty: true});
@@ -126,7 +133,11 @@ function XboardCdnFields({form, protocol}) {
     className: 'block min-w-0 space-y-1 text-xs',
     children: [
       Q.jsx('span', {children: label}),
-      Q.jsx(u8e, {value: server[field] ?? '', onChange: event => change(field, event.target.value)}),
+      Q.jsx(u8e, {value: field === 'server_port' ? XboardServerPortDisplay(server) : server[field] ?? '',
+        placeholder: protocol === 'hysteria' && Number(server.protocol_settings.version || 2) === 2 && ['port','server_port'].includes(field) ? XboardT('例如：60000 或 60000-65000') : undefined,
+        onChange: event => field === 'server_port'
+          ? XboardSetServerPort(form,'cdn_settings.server.server_port',event.target.value,'cdn_settings.server.protocol_settings')
+          : change(field,event.target.value)}),
       Q.jsx('span', {className: 'block text-muted-foreground', children: hint})
     ]
   });
@@ -151,11 +162,13 @@ function XboardFallbackAllowed(protocol, settings) {
 
 function XboardCommitAdvanced(outer, draft, protocol, customTouched) {
   const values = draft.getValues();
+  if (!XboardValidateHopping(values)) return false;
   const cdn = values.cdn_settings;
   if (cdn?.enabled) {
     const server = cdn.server;
     if (!server.host?.trim() || !/^\d{1,5}(-\d{1,5})?$/.test(String(server.port)) ||
-        !/^\d+$/.test(String(server.server_port)) || +server.server_port < 1 || +server.server_port > 65535) {
+        !(protocol === 'hysteria' && Number(server.protocol_settings.version || 2) === 2
+          ? XboardHY2Range(server.server_port) : /^\d+$/.test(String(server.server_port)) && +server.server_port >= 1 && +server.server_port <= 65535)) {
       gE.error(XboardT('请填写服务端节点地址、连接端口和有效的监听端口。'));
       return false;
     }

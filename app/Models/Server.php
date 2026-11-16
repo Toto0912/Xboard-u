@@ -299,7 +299,8 @@ class Server extends Model
                 ]
             ],
             'tls' => self::TLS_CONFIGURATION,
-            'hop_interval' => ['type' => 'integer', 'default' => null]
+            'hop_interval' => ['type' => 'integer', 'default' => null],
+            'hop_interval_max' => ['type' => 'integer', 'default' => null]
         ],
         self::TYPE_TUIC => [
             'version' => ['type' => 'integer', 'default' => 5],

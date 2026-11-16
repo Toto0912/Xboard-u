@@ -80,7 +80,7 @@ final class AdminAssetPatcher
             'max-h-[60vh] min-h-[350px] overflow-y-auto px-6 py-4",children:[Q.jsx(aw'
                 => 'min-h-0 overflow-y-auto px-6 py-4",style:{maxHeight:"52dvh"},children:[Q.jsx(aw,{value:"cdn",forceMount:true,hidden:o!=="cdn",children:r&&Q.jsx(XboardCdnFields,{form:e,protocol:inboundProtocol})}),Q.jsx(aw',
             'const t=x.getValues(),n=parseFloat(t.transfer_enable_gb'
-                => 'const t=x.getValues();if(!t.cdn_settings?.enabled&&Number(t.protocol_settings?.version||2)===2&&t.protocol_settings?.hy2_draft_invalid)return gE.error(XboardT("请填写有效的 JSON 对象。"));if(t.protocol_settings?.transport_draft_invalid)return gE.error(XboardT("请先修正传输 JSON。"));const n=parseFloat(t.transfer_enable_gb',
+                => 'const t=x.getValues();if(!XboardValidateHopping(t))return;if(!t.cdn_settings?.enabled&&Number(t.protocol_settings?.version||2)===2&&t.protocol_settings?.hy2_draft_invalid)return gE.error(XboardT("请填写有效的 JSON 对象。"));if(t.protocol_settings?.transport_draft_invalid)return gE.error(XboardT("请先修正传输 JSON。"));const n=parseFloat(t.transfer_enable_gb',
             'return!t})()&&s(!1)'
                 => 'return!t})()&&XboardCommitAdvanced(outer,e,inboundProtocol,customTouched)&&s(!1)',
             'custom_routes:gy(hy()).default([]),protocol_settings:'
@@ -90,19 +90,21 @@ final class AdminAssetPatcher
             'let r=n;if(i?.schema)'
                 => 'let r=n;if(!XboardCanChangeProtocol(x,t))return;if(i?.schema)',
             'r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L})'
-                => 'x.watch("cdn_settings")?.enabled&&Q.jsx("p",{className:"text-xs text-muted-foreground",children:XboardT("节点地址和连接端口供客户端连接。服务端监听端口在高级设置 → CDN套用中修改。")}),r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L,cdn:x.watch("cdn_settings")})',
+                => 'Q.jsx(XboardHY2HopFields,{form:x}),x.watch("cdn_settings")?.enabled&&Q.jsx("p",{className:"text-xs text-muted-foreground",children:XboardT("节点地址和连接端口供客户端连接。服务端监听端口在高级设置 → CDN套用中修改。")}),r&&(l?Q.jsx(o5t,{serverType:l,value:w,onChange:L,cdn:x.watch("cdn_settings")})',
             'o5t=({serverType:e,value:t,onChange:n})'
                 => 'o5t=({serverType:e,value:t,onChange:n,cdn,side})',
             'Q.jsx(c,{form:l,t:i})'
                 => 'Q.jsx(XboardConnectionContext().Provider,{value:{cdn,side},children:Q.jsxs(Q.Fragment,{children:[!["vless","vmess","trojan"].includes(e)&&Q.jsx(XboardKernelSelect,{form:l,protocol:e}),Q.jsx(c,{form:l,t:i})]})})',
             'onClick:()=>{const e=t.value;e&&x.setValue("server_port",e)}'
-                => 'disabled:!!x.watch("cdn_settings")?.enabled,onClick:()=>{const e=t.value;e&&x.setValue("server_port",e)}',
+                => 'disabled:!!x.watch("cdn_settings")?.enabled,onClick:()=>{const e=t.value;e&&XboardSetServerPort(x,"server_port",e)}',
             'children:e("form.submit")'
                 => 'children:XboardT("保存节点")',
             'children:i("common.save","Save")'
                 => 'children:XboardT("保存")',
             'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t'
-                => 'placeholder:e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,value:x.watch("cdn_settings")?.enabled?(x.watch("cdn_settings.server.server_port")??""):t.value,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?XboardT("在高级设置 → CDN套用中设置服务端端口"):undefined',
+                => 'placeholder:XboardHY2PortPlaceholder(x)||e("form.server_port.placeholder"),className:"h-9 font-mono text-xs",...t,onChange:event=>XboardSetServerPort(x,"server_port",event.target.value),value:x.watch("cdn_settings")?.enabled?XboardServerPortDisplay(x.getValues()):t.value,disabled:!!x.watch("cdn_settings")?.enabled,title:x.watch("cdn_settings")?.enabled?XboardT("在高级设置 → CDN套用中设置服务端端口"):undefined',
+            'placeholder:e("form.port.placeholder"),className:"h-9 font-mono text-xs",...t'
+                => 'placeholder:XboardHY2PortPlaceholder(x)||e("form.port.placeholder"),className:"h-9 font-mono text-xs",...t',
             'const n=`${e.host}:${e.port}`,i=e.port!==e.server_port;'
                 => 'const n=`${e.host}:${e.port}`,xboardServerPort=e.cdn_settings?.enabled?(e.cdn_settings.server?.server_port??""):e.server_port,i=String(e.port)!==String(xboardServerPort);',
             'children:["(",t("columns.internalPort")," ",e.server_port,")"]'
@@ -154,7 +156,7 @@ final class AdminAssetPatcher
         if (substr_count($source, $anchor) !== 1) {
             throw new RuntimeException('Unexpected target kernel schema anchor.');
         }
-        $source = str_replace($anchor, 'a=H.useMemo(()=>o?.schema?.extend({target_kernel:cy().nullable().optional(),hy2_settings:hy().nullable().optional(),hy2_draft_invalid:uy().optional(),transport_draft_invalid:uy().optional()})||fy(hy()),[e])', $source);
+        $source = str_replace($anchor, 'a=H.useMemo(()=>o?.schema?.extend({target_kernel:cy().nullable().optional(),hy2_settings:hy().nullable().optional(),hy2_draft_invalid:uy().optional(),hop_interval:dy().nullable().optional(),hop_interval_max:dy().nullable().optional(),hop_interval_invalid:uy().optional(),transport_draft_invalid:uy().optional()})||fy(hy()),[e])', $source);
         $flowOptions = 'flowOptions:["none","xtls-rprx-direct","xtls-rprx-splice","xtls-rprx-vision"]';
         $flowField = 'Q.jsx($y,{control:e.control,name:"flow",render:({field:e})=>Q.jsxs(Gy,{children:[Q.jsx(Zy,{className:"font-mono text-[12px] text-foreground/80",children:t("dynamic_form.vless.flow.label")}),Q.jsx(Yy,{children:Q.jsxs(yzt,{onValueChange:t=>e.onChange("none"===t?null:t),value:e.value||"none",children:[Q.jsx(Czt,{className:"font-mono text-xs",children:Q.jsx(wzt,{placeholder:t("dynamic_form.vless.flow.placeholder")})}),Q.jsx(Nzt,{children:P4t.flowOptions.map(e=>Q.jsx(Lzt,{value:e,children:e},e))})]})})]})})';
         if (substr_count($source, $flowOptions) !== 1 || substr_count($source, $flowField) !== 1) {
@@ -197,6 +199,9 @@ final class AdminAssetPatcher
         $hy2Anchor = 'Q.jsx(c,{form:l,t:i})';
         if (substr_count($source, $hy2Anchor) !== 1) { throw new RuntimeException('Unexpected HY2 form anchor.'); }
         $source = str_replace($hy2Anchor, 'Q.jsxs(Q.Fragment,{children:[Q.jsx(c,{form:l,t:i}),e==="hysteria"&&Q.jsx(XboardHY2Editor,{form:l})]})', $source);
+        $hop = 'Q.jsx($y,{control:e.control,name:"hop_interval",';
+        if (substr_count($source, $hop) !== 1) { throw new RuntimeException('Unexpected HY2 hop input anchor.'); }
+        $source = str_replace($hop, '1===Number(e.watch("version"))&&'.$hop, $source);
         return $source . "\n;" . $component . "\n";
     }
 
@@ -204,7 +209,7 @@ final class AdminAssetPatcher
     {
         return implode("\n; ", array_map(
             fn (string $name) => file_get_contents($root . '/resources/js/' . $name . '.js'),
-            ['admin-i18n', 'admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor', 'admin-hy2']
+            ['admin-i18n', 'admin-port-hopping', 'admin-fallback', 'admin-cdn', 'admin-transport', 'admin-editor', 'admin-hy2']
         ));
     }
 

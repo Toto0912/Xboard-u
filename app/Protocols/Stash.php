@@ -505,6 +505,7 @@ class Stash extends AbstractProtocol
         }
         if (isset($server['ports'])) {
             $array['ports'] = $server['ports'];
+            $array['hop-interval'] = \App\Support\Hysteria2PortHopping::interval($protocol_settings);
         }
         switch (data_get($protocol_settings, 'version')) {
             case 1:

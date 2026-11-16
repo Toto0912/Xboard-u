@@ -720,9 +720,11 @@ class SingBox extends AbstractProtocol
         if ($this->supportsFeature('sing-box', '1.11.0')) {
             if (isset($server['ports'])) {
                 $baseConfig['server_ports'] = [str_replace('-', ':', $server['ports'])];
-            }
-            if (isset($protocol_settings['hop_interval'])) {
-                $baseConfig['hop_interval'] = "{$protocol_settings['hop_interval']}s";
+                unset($baseConfig['server_port']);
+                $baseConfig['hop_interval'] = \App\Support\Hysteria2PortHopping::interval($protocol_settings) . 's';
+                if ($this->supportsFeature('sing-box', '1.14.0') && !empty($protocol_settings['hop_interval_max'])) {
+                    $baseConfig['hop_interval_max'] = (int) $protocol_settings['hop_interval_max'] . 's';
+                }
             }
         }
 

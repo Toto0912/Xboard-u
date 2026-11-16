@@ -87,7 +87,8 @@ class ServerService
             // 判断动态端口
             if (str_contains($server->port, '-')) {
                 $port = $server->port;
-                $server->port = (int) Helper::randomPort($port);
+                $server->port = $server->type === 'hysteria' && (int) data_get($server->protocol_settings, 'version', 2) === 2
+                    ? \App\Support\Hysteria2PortHopping::range($port)[0] : (int) Helper::randomPort($port);
                 $server->ports = $port;
             } else {
                 $server->port = (int) $server->port;
@@ -328,16 +329,16 @@ class ServerService
                 'server_port' => (int) $serverPort,
                 'version' => (int) $protocolSettings['version'],
                 'host' => $host,
-                'server_name' => $protocolSettings['tls']['server_name'],
-                'tls_settings' => $protocolSettings['tls'],
+                'server_name' => data_get($protocolSettings, 'tls.server_name'),
+                'tls_settings' => $protocolSettings['tls'] ?? [],
                 // The panel bandwidth is client-facing; HY2 server directions are reversed.
-                'up_mbps' => (int) $protocolSettings['bandwidth'][(int) $protocolSettings['version'] === 2 ? 'down' : 'up'],
-                'down_mbps' => (int) $protocolSettings['bandwidth'][(int) $protocolSettings['version'] === 2 ? 'up' : 'down'],
+                'up_mbps' => (int) data_get($protocolSettings, 'bandwidth.'.((int) $protocolSettings['version'] === 2 ? 'down' : 'up'), 0),
+                'down_mbps' => (int) data_get($protocolSettings, 'bandwidth.'.((int) $protocolSettings['version'] === 2 ? 'up' : 'down'), 0),
                 ...((int) $protocolSettings['version'] === 2 ? ['hy2_settings' => \App\Support\Hysteria2Settings::server($protocolSettings)] : []),
                 ...match ((int) $protocolSettings['version']) {
                         1 => ['obfs' => $protocolSettings['obfs']['password'] ?? null],
                         2 => [
-                            'obfs' => $protocolSettings['obfs']['open'] ? $protocolSettings['obfs']['type'] : null,
+                            'obfs' => data_get($protocolSettings, 'obfs.open', false) ? data_get($protocolSettings, 'obfs.type', 'salamander') : null,
                             'obfs-password' => $protocolSettings['obfs']['password'] ?? null,
                         ],
                         default => [],

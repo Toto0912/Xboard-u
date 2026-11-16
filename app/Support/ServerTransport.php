@@ -251,6 +251,7 @@ final class ServerTransport
 
     public static function clientPayload(array $server): array
     {
+        $server = Hysteria2PortHopping::client($server);
         Arr::forget($server, [
             'cdn_settings', 'server_port', 'cert_config', 'custom_outbounds', 'custom_routes',
             'protocol_settings.xray_fallback',

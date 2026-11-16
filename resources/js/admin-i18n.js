@@ -1,6 +1,11 @@
 // Shares the pinned admin's i18next instance and language-change events.
 const XboardTranslations = {
   "en-US": {
+    "端口跳跃间隔（秒）": "Port hopping interval (s)",
+    "例如：60000 或 60000-65000": "e.g. 60000 or 60000-65000",
+    "例如：10 或 10-30，默认 30": "e.g. 10 or 10-30; default 30",
+    "间隔至少 5 秒，支持 10 或 10-30。": "Use at least 5 seconds, for example 10 or 10-30.",
+    "端口须为 1-65535 内的整数或连续范围。": "Use one port or an ascending range within 1-65535.",
     "高级设置": "Advanced settings",
     "节点配置": "Node configuration",
     "连接配置": "Connection settings",
@@ -132,6 +137,11 @@ const XboardTranslations = {
     "带宽按客户端视角填写：上行对应服务端下行，下行对应服务端上行。": "Enter bandwidth from the client perspective: upload is server download, and download is server upload."
   },
   "ru-RU": {
+    "端口跳跃间隔（秒）": "Интервал смены порта (с)",
+    "例如：60000 或 60000-65000": "Например: 60000 или 60000-65000",
+    "例如：10 或 10-30，默认 30": "Например: 10 или 10-30; по умолчанию 30",
+    "间隔至少 5 秒，支持 10 或 10-30。": "Минимум 5 секунд: например, 10 или 10-30.",
+    "端口须为 1-65535 内的整数或连续范围。": "Укажите порт или возрастающий диапазон от 1 до 65535.",
     "高级设置": "Расширенные настройки",
     "节点配置": "Настройки узла",
     "连接配置": "Настройки подключения",

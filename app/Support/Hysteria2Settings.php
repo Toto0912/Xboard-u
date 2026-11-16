@@ -49,7 +49,8 @@ final class Hysteria2Settings
         $extra = $settings['hy2_settings'] ?? null;
         if ($extra === null || $extra === []) { return null; }
         if (!is_array($extra) || array_is_list($extra)) { return 'hy2_settings must be an object.'; }
-        if (array_diff(array_keys($extra), ['kernel','bandwidth_mode','masquerade'])) { return 'Unsupported HY2 setting; custom QUIC parameters are not supported.'; }
+        if (array_diff(array_keys($extra), ['kernel','bandwidth_mode','masquerade','port_range'])) { return 'Unsupported HY2 setting; custom QUIC parameters are not supported.'; }
+        if (isset($extra['port_range']) && !Hysteria2PortHopping::range($extra['port_range'])) { return __('hy2.port_range'); }
         if (isset($extra['bandwidth_mode']) && $extra['bandwidth_mode'] !== 'auto') { return 'bandwidth_mode must be auto.'; }
         $m = $extra['masquerade'] ?? null;
         if ($m === null || $m === []) { return null; }

@@ -1,5 +1,14 @@
 # 更新记录
 
+## v2.3.0 — 2026-11-16
+
+- 新增 HY2 端口跳跃：连接端口和服务端口支持连续范围，间隔支持固定值或随机范围，最小 5 秒、默认 30 秒。
+- 新增中英俄三语间隔输入框，适配单端口禁用、日夜主题及移动端；CDN 分离、同步配置与只读服务端口完整保留范围。
+- 按客户端能力转换 Sing-box、Mihomo、Stash、Surge 订阅，旧客户端保留有效公网首端口；移除 Shadowrocket 将跳跃间隔误写为 keepalive 的映射。
+- 服务端范围使用可选 hy2_settings.port_range，下发整数 server_port 首端口，不改变数据库列类型；自动转发需配套 xboard-node-u v2.3.0。
+- 修复 HY2 带宽／TLS／混淆可空字段造成的配置构建异常，保留带宽方向、BBR / Brutal、Masquerade、用户及流量统计逻辑。
+- 本地隔离验证：SQLite 与 MySQL 5.7 各 168 tests / 1922 assertions，包含 REST/WebSocket、配置保存回显和订阅兼容；两内核双栈实际接入及界面检查通过。
+
 ## v2.2.1 — 2026-11-14
 
 - 完善 Surge VLESS / REALITY / Vision / Encryption / XHTTP、Trojan WebSocket、TUIC 和 HY2 参数转换，按客户端版本过滤已知不支持的 VLESS，修复空组、节点重名和配置值转义。

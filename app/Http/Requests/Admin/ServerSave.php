@@ -51,6 +51,7 @@ class ServerSave extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            \App\Support\Hysteria2PortHopping::validate($validator, $this->all());
             \App\Support\CustomKernelConfig::validate($validator, $this->all());
             \App\Support\Hysteria2Settings::validate($validator, $this->all());
             if ($validator->errors()->isNotEmpty()) {
@@ -202,7 +203,8 @@ class ServerSave extends FormRequest
             'obfs.password' => 'string|nullable',
             'bandwidth.up' => 'nullable|integer',
             'bandwidth.down' => 'nullable|integer',
-            'hop_interval' => 'integer|nullable',
+            'hop_interval' => 'nullable',
+            'hop_interval_max' => 'nullable|integer|between:5,2147483647',
         ],
         'vless' => [
             'xray_fallback' => 'nullable|string',
@@ -277,6 +279,9 @@ class ServerSave extends FormRequest
     private function getProtocolRules(string $type): array
     {
         $rules = self::PROTOCOL_RULES[$type] ?? [];
+        if ($type === 'hysteria' && (int) $this->input('protocol_settings.version', 2) !== 2) {
+            $rules['hop_interval'] = 'integer|nullable';
+        }
 
         return match ($type) {
             'vmess' => array_merge(
@@ -371,7 +376,8 @@ class ServerSave extends FormRequest
             'cdn_settings.server' => ($cdnEnabled ? 'required' : 'nullable') . '|array:host,port,server_port,protocol_settings',
             'cdn_settings.server.host' => 'required_with:cdn_settings.server|string|max:255',
             'cdn_settings.server.port' => 'required_with:cdn_settings.server|regex:/^\d{1,5}(-\d{1,5})?$/',
-            'cdn_settings.server.server_port' => 'required_with:cdn_settings.server|integer|between:1,65535',
+            'cdn_settings.server.server_port' => $type === 'hysteria' && (int) $this->input('cdn_settings.server.protocol_settings.version', 2) === 2
+                ? 'required_with:cdn_settings.server' : 'required_with:cdn_settings.server|integer|between:1,65535',
             'cdn_settings.server.protocol_settings' => 'required_with:cdn_settings.server|array',
         ];
         if ($this->input('cdn_settings.server') !== null) {

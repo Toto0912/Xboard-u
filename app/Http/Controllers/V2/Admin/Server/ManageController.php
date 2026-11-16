@@ -24,6 +24,12 @@ class ManageController extends Controller
             $item['groups'] = collect($item['group_ids'] ?? [])->map(fn ($id) => $groups->get($id))
                 ->filter()->sortBy('id')->values();
             $data = $item->makeVisible('cdn_settings')->toArray();
+            if (\App\Support\Hysteria2PortHopping::isHy2($data, $data['type'])) {
+                $data['server_port'] = \App\Support\Hysteria2PortHopping::serverPort($data);
+                if (isset($data['cdn_settings']['server'])) {
+                    $data['cdn_settings']['server']['server_port'] = \App\Support\Hysteria2PortHopping::serverPort($data['cdn_settings']['server']);
+                }
+            }
             // Nested form fields must start on a JSON object. Named properties
             // assigned to [] by react-hook-form disappear during JSON.stringify.
             // Convert after toArray(), otherwise the model's array cast restores [].
@@ -67,9 +73,10 @@ class ManageController extends Controller
     public function save(ServerSave $request)
     {
         $params = \App\Support\CustomKernelConfig::preserveObjects($request->validated(), $request->getContent());
+        $params = \App\Support\Hysteria2PortHopping::normalize($params);
         if (isset($params['cdn_settings']['server'])) {
             $params['cdn_settings']['server']['protocol_settings'] = Server::normalizeProtocolSettings(
-                $params['type'], $request->input('cdn_settings.server.protocol_settings')
+                $params['type'], $params['cdn_settings']['server']['protocol_settings']
             );
         }
         if (isset($params['cdn_settings'])) {

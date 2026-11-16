@@ -587,9 +587,7 @@ class ClashMeta extends AbstractProtocol
         ];
         if (isset($server['ports'])) {
             $array['ports'] = $server['ports'];
-        }
-        if ($hopInterval = data_get($protocol_settings, 'hop_interval')) {
-            $array['hop-interval'] = (int) $hopInterval;
+            $array['hop-interval'] = \App\Support\Hysteria2PortHopping::interval($protocol_settings, true);
         }
         switch (data_get($protocol_settings, 'version')) {
             case 1:

@@ -36,7 +36,9 @@ function XboardHY2Editor({form}) {
       return;
     }
     sent.current = value ? JSON.stringify(value,null,2) : '';
-    form.setValue('hy2_settings', {bandwidth_mode:'auto',kernel,...(value ? {masquerade:value} : {})}, {shouldDirty:true});
+    const previous = {...form.getValues('hy2_settings')};
+    delete previous.masquerade;
+    form.setValue('hy2_settings', {...previous,bandwidth_mode:'auto',kernel,...(value ? {masquerade:value} : {})}, {shouldDirty:true});
     form.setValue('hy2_draft_invalid', false, {shouldDirty:true});
   };
   H.useEffect(() => {
