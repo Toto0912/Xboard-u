@@ -116,6 +116,7 @@ class UserService
 
     public function trafficFetch(Server $server, string $protocol, array $data)
     {
+        ServerTrafficActivity::record($server, $data);
         $server->rate = $server->getCurrentRate();
         $server = $server->toArray();
 

@@ -13,7 +13,7 @@
             "listen_port": 23333,
             "tcp_fast_open": false,
             "tcp_multi_path": false,
-            "udp_fragment": false
+            "udp_fragment": true
         },
         {
             "type": "tun",
@@ -24,24 +24,10 @@
                 "2001:2::1/126"
             ],
             "mtu": 1420,
+            "dns_mode": "hijack",
             "auto_route": true,
             "strict_route": true,
-            "auto_redirect": true,
-            "endpoint_independent_nat": true,
-            "stack": "gvisor",
-            "route_exclude_address": [
-                "10.0.0.0/8",
-                "172.16.0.0/12",
-                "192.168.0.0/16",
-                "127.0.0.0/8",
-                "100.64.0.0/10",
-                "169.254.0.0/16",
-                "224.0.0.0/4",
-                "240.0.0.0/4",
-                "::1/128",
-                "fe80::/10",
-                "ff00::/8"
-            ]
+            "stack": "gvisor"
         }
     ],
     "outbounds": [
@@ -129,14 +115,14 @@
                 "no_drop": true
             },
             {
-                "action": "sniff"
+                "inbound": [
+                    "tun-in"
+                ],
+                "port": 53,
+                "action": "hijack-dns"
             },
             {
-                "action": "reject",
-                "protocol": [
-                    "bittorrent",
-                    "quic"
-                ]
+                "action": "sniff"
             },
             {
                 "action": "hijack-dns",
@@ -179,6 +165,13 @@
                     "GeoIP-CN"
                 ],
                 "outbound": "🎯 全球直连"
+            },
+            {
+                "action": "reject",
+                "protocol": [
+                    "quic",
+                    "bittorrent"
+                ]
             },
             {
                 "action": "route",
@@ -234,7 +227,8 @@
         "auto_detect_interface": true,
         "final": "🐟 漏网之鱼",
         "default_domain_resolver": {
-            "server": "Local-DNS"
+            "server": "Local-DNS",
+            "strategy": "prefer_ipv6"
         }
     },
     "dns": {
@@ -334,7 +328,6 @@
         "strategy": "prefer_ipv4",
         "disable_cache": false,
         "disable_expire": false,
-        "independent_cache": false,
         "final": "Remote-DNS"
     },
     "experimental": {

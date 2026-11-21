@@ -20,11 +20,11 @@ tun:
   auto-route: true
   auto-detect-interface: true
 
-# DNS：保持 Real-IP 模式；Clash Premium 使用 normal，不接受 redir-host。
+# DNS：保持 Real-IP 模式
 dns:
   enable: true
   ipv6: true
-  enhanced-mode: normal
+  enhanced-mode: redir-host
   use-hosts: false
 
   default-nameserver:
@@ -69,47 +69,54 @@ rule-providers:
   reject:
     type: http
     behavior: domain
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt'
-    path: ./ruleset/reject.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/ads.list'
+    path: ./ruleset/reject.list
     interval: 86400
 
   applications:
     type: http
     behavior: classical
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/applications.txt'
-    path: ./ruleset/applications.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/applications.list'
+    path: ./ruleset/applications.list
     interval: 86400
 
   direct:
     type: http
     behavior: domain
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt'
-    path: ./ruleset/direct.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/cn.list'
+    path: ./ruleset/direct.list
     interval: 86400
 
   proxy:
     type: http
     behavior: domain
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt'
-    path: ./ruleset/proxy.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/proxy.list'
+    path: ./ruleset/proxy.list
     interval: 86400
 
   lancidr:
     type: http
     behavior: ipcidr
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt'
-    path: ./ruleset/lancidr.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/privateip.list'
+    path: ./ruleset/lancidr.list
     interval: 86400
 
   cncidr:
     type: http
     behavior: ipcidr
-    url: 'https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt'
-    path: ./ruleset/cncidr.yaml
+    format: text
+    url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/cnip.list'
+    path: ./ruleset/cncidr.list
     interval: 86400
-
-# Clash Premium SCRIPT rules require a named shortcut.
+    
+# 用 Premium 脚本快捷规则保留 UDP 443 拦截条件
 script:
+  engine: expr
   shortcuts:
     quic: network == 'udp' and dst_port == 443
 

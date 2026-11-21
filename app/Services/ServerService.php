@@ -41,15 +41,17 @@ class ServerService
     private static function loadStatusSnapshots(Collection $servers): void
     {
         $keys = [];
+        $activityKeys = [];
         foreach ($servers as $server) {
             $id = $server->parent_id ?: $server->id;
             $type = strtoupper($server->type);
-            foreach (['LAST_CHECK_AT', 'LAST_PUSH_AT', 'ONLINE_USER', 'LOAD_STATUS', 'METRICS'] as $field) {
+            $activityKeys[ServerTrafficActivity::key($server->type, $id)] = true;
+            foreach (['LAST_CHECK_AT', 'LAST_PUSH_AT', 'LOAD_STATUS', 'METRICS'] as $field) {
                 $keys[] = CacheKey::get("SERVER_{$type}_{$field}", $id);
             }
         }
         if ($keys === []) return;
-        $values = Cache::many(array_values(array_unique($keys)));
+        $values = Cache::many(array_values(array_unique($keys))) + ServerTrafficActivity::counts(array_keys($activityKeys));
         foreach ($servers as $server) $server->useStatusSnapshot($values);
     }
 
@@ -154,7 +156,6 @@ class ServerService
         $nodeType = strtoupper($node->type);
         $nodeId = $node->id;
 
-        Cache::put(CacheKey::get("SERVER_{$nodeType}_ONLINE_USER", $nodeId), count($data), 3600);
         Cache::put(CacheKey::get("SERVER_{$nodeType}_LAST_PUSH_AT", $nodeId), time(), 3600);
 
         (new UserService())->trafficFetch($node, $node->type, $data);

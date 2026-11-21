@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ServerTrafficActivity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -524,9 +525,9 @@ class Server extends Model
     {
         return Attribute::make(
             get: function () {
-                $type = strtoupper($this->type);
                 $serverId = $this->parent_id ?: $this->id;
-                return $this->readStatus(CacheKey::get("SERVER_{$type}_ONLINE_USER", $serverId)) ?? 0;
+                $key = ServerTrafficActivity::key($this->type, $serverId);
+                return $this->statusSnapshot[$key] ?? ServerTrafficActivity::counts([$key])[$key];
             }
         );
     }
