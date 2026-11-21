@@ -1,16 +1,16 @@
+# Clash Premium 2023.08.17 订阅模板
 mixed-port: 33333
-ipv6: true
+ipv6: false
 allow-lan: true
 bind-address: '*'
 mode: rule
 log-level: silent
 external-controller: 127.0.0.1:9090
 
-# 原版 Premium 的 TLS SNI 嗅探选项
+# Premium 的 TLS SNI 嗅探
 experimental:
   sniff-tls-sni: true
 
-# TUN 配置
 tun:
   enable: true
   stack: gvisor
@@ -20,22 +20,31 @@ tun:
   auto-route: true
   auto-detect-interface: true
 
-# DNS：保持 Real-IP 模式
 dns:
   enable: true
   ipv6: true
-  enhanced-mode: redir-host
+  enhanced-mode: fake-ip
+  fake-ip-range: '198.18.0.1/16'
   use-hosts: false
+
+  # 这些域名使用真实 DNS 答复
+  fake-ip-filter:
+    - '+.lan'
+    - '+.local'
+    - '+.home.arpa'
+    - '+.localhost'
+    - 'localhost.ptlogin2.qq.com'
 
   default-nameserver:
     - '119.29.29.29'
     - '223.5.5.5'
 
-  # 原版上游 DNS 直接连接
+  # Premium 直连这些上游 DNS
   nameserver:
     - 'tls://8.8.4.4'
     - 'tls://1.0.0.1'
 
+# 订阅生成器填入节点和两个测速组的成员
 proxies: []
 
 proxy-groups:
@@ -113,8 +122,8 @@ rule-providers:
     url: 'https://cdn.jsdelivr.net/gh/DustinWin/ruleset_geodata@mihomo-ruleset/cnip.list'
     path: ./ruleset/cncidr.list
     interval: 86400
-    
-# 用 Premium 脚本快捷规则保留 UDP 443 拦截条件
+
+# 拒绝尚未匹配直连规则的 UDP 443 连接
 script:
   engine: expr
   shortcuts:
@@ -126,6 +135,7 @@ rules:
   - 'RULE-SET,lancidr,DIRECT,no-resolve'
   - 'RULE-SET,cncidr,DIRECT,no-resolve'
   - 'GEOIP,cn,DIRECT,no-resolve'
+  - 'RULE-SET,reject,REJECT'
   - 'SCRIPT,quic,REJECT,no-resolve'
   - 'RULE-SET,proxy,节点选择'
   - 'MATCH,漏网之鱼'

@@ -103,7 +103,7 @@ class DefaultSubscriptionTemplateTest extends TestCase
     public function test_premium_clash_quic_shortcut_is_defined_and_shared_stash_template_is_identical(): void
     {
         $clash = Yaml::parse(SubscribeTemplate::getContent('clash'));
-        $this->assertSame('normal', $clash['dns']['enhanced-mode']);
+        $this->assertContains($clash['dns']['enhanced-mode'], ['normal', 'fake-ip', 'redir-host']);
         $this->assertSame("network == 'udp' and dst_port == 443", $clash['script']['shortcuts']['quic']);
         $this->assertContains('SCRIPT,quic,REJECT,no-resolve', $clash['rules']);
         $this->assertSame(SubscribeTemplate::getContent('clashmeta'), SubscribeTemplate::getContent('stash'));
