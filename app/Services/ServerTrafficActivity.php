@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Redis;
 final class ServerTrafficActivity
 {
     private const WINDOW_SECONDS = 600;
+    private const MIN_REPORT_BYTES = 64 * 1024;
 
     private const RECORD = <<<'LUA'
         local key = KEYS[1]
@@ -40,7 +41,8 @@ final class ServerTrafficActivity
             $upload = $delta[0] ?? null;
             $download = $delta[1] ?? null;
             if (is_numeric($upload) && is_numeric($download)
-                && $upload >= 0 && $download >= 0 && ($upload > 0 || $download > 0)) {
+                && $upload >= 0 && $download >= 0
+                && ($upload + $download) >= self::MIN_REPORT_BYTES) {
                 $users[] = (string) $userId;
             }
         }
