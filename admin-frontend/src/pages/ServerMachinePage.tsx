@@ -88,7 +88,7 @@ function formatSpeed(bytesPerSec: number | null | undefined): string {
   return `${formatBytes(num)}/s`;
 }
 
-type SortKey = 'name' | 'status' | 'last_seen_at';
+type SortKey = 'id' | 'name' | 'status' | 'last_seen_at';
 
 export default function ServerMachinePage() {
   const { t } = useTranslation();
@@ -98,7 +98,7 @@ export default function ServerMachinePage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'offline'>('all');
   const [nodeFilter, setNodeFilter] = useState<'all' | 'bound' | 'unbound'>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortKey, setSortKey] = useState<SortKey>('id');
   const [sortAsc, setSortAsc] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -185,13 +185,14 @@ export default function ServerMachinePage() {
 
     filtered.sort((a, b) => {
       let cmp = 0;
-      if (sortKey === 'name') cmp = a.name.localeCompare(b.name);
+      if (sortKey === 'id') cmp = a.id - b.id;
+      else if (sortKey === 'name') cmp = a.name.localeCompare(b.name);
       else if (sortKey === 'status') {
         cmp = Number(isMachineOnline(a.last_seen_at)) - Number(isMachineOnline(b.last_seen_at));
       } else {
         cmp = Number(a.last_seen_at ?? 0) - Number(b.last_seen_at ?? 0);
       }
-      return sortAsc ? cmp : -cmp;
+      return cmp !== 0 ? (sortAsc ? cmp : -cmp) : a.id - b.id;
     });
     return filtered;
   }, [machinesQuery.data, search, statusFilter, nodeFilter, sortKey, sortAsc]);

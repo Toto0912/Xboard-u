@@ -12,7 +12,7 @@ class RouteController extends Controller
 {
     public function fetch(Request $request)
     {
-        $routes = ServerRoute::get();
+        $routes = ServerRoute::orderBy('id')->get();
         return [
             'data' => $routes
         ];

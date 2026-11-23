@@ -32,7 +32,7 @@ export default function ServerGroupPage() {
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('id');
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 

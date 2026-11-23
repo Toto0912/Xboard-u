@@ -15,7 +15,7 @@ class GroupController extends Controller
     public function fetch(Request $request): JsonResponse
     {
         $serverGroups = ServerGroup::query()
-            ->orderByDesc('id')
+            ->orderBy('id')
             ->withCount('users')
             ->get();
 
