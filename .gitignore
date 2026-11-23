@@ -32,6 +32,6 @@ compose.yaml
 compose.host.yaml
 compose.split.yaml
 .scribe
-/public/assets/admin/assets/*.xboard-u-*.js
-/public/assets/xboard-u/admin-entry.json
-/public/assets/xboard-u/admin-editor-*.css
+/admin-frontend/node_modules
+/admin-frontend/dist
+/admin-frontend/.env.local

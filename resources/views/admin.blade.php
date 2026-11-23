@@ -1,33 +1,31 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN" translate="no" class="notranslate">
 
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="google" content="notranslate" />
   <title>{{ $title }}</title>
   <script>
     window.settings = {
       base_url: "/",
-      title: "{{ $title }}",
-      version: "{{ $version }}",
-      logo: "{{ $logo }}",
-      secure_path: "{{ $secure_path }}",
+      title: @json($title),
+      version: @json($version),
+      logo: @json($logo),
+      secure_path: @json($secure_path)
     };
   </script>
   @php
-    $adminEntryPath = public_path('assets/xboard-u/admin-entry.json');
-    $adminEntries = file_exists($adminEntryPath) ? json_decode(file_get_contents($adminEntryPath), true) : [];
-    $adminEntries = is_array($adminEntries) ? $adminEntries : [];
     $manifestPath = public_path('assets/admin/manifest.json');
     $manifest = file_exists($manifestPath) ? json_decode(file_get_contents($manifestPath), true) : null;
     $entry = is_array($manifest) ? ($manifest['index.html'] ?? null) : null;
     $scripts = [];
+    $preloads = [];
     $styles = [];
-    $locales = [];
 
     if (is_array($entry)) {
       $visited = [];
-      $collectAssets = function ($chunkName) use (&$collectAssets, &$manifest, &$visited, &$scripts, &$styles) {
+      $collectAssets = function ($chunkName) use (&$collectAssets, &$manifest, &$visited, &$scripts, &$preloads, &$styles) {
         if (isset($visited[$chunkName]) || !isset($manifest[$chunkName]) || !is_array($manifest[$chunkName])) {
           return;
         }
@@ -47,43 +45,30 @@
           }
         }
 
-        if (!empty($chunk['isEntry']) && !empty($chunk['file'])) {
-          $scripts[$chunk['file']] = $chunk['file'];
+        if (!empty($chunk['file'])) {
+          if (!empty($chunk['isEntry'])) {
+            $scripts[$chunk['file']] = $chunk['file'];
+          } else {
+            $preloads[$chunk['file']] = $chunk['file'];
+          }
         }
       };
 
       $collectAssets('index.html');
     }
-
-    foreach (glob(public_path('assets/admin/locales/*.js')) ?: [] as $localeFile) {
-      $locales[] = 'locales/' . basename($localeFile);
-    }
-    sort($locales);
   @endphp
 
   @if($entry && count($scripts) > 0)
     @foreach($styles as $css)
       <link rel="stylesheet" crossorigin href="/assets/admin/{{ $css }}" />
     @endforeach
-    @foreach($locales as $locale)
-      <script src="/assets/admin/{{ $locale }}"></script>
+    @foreach($preloads as $preload)
+      <link rel="modulepreload" crossorigin href="/assets/admin/{{ $preload }}" />
     @endforeach
     @foreach($scripts as $js)
-      <script type="module" crossorigin src="/assets/admin/{{ $adminEntries[$js] ?? $js }}"></script>
+      <script type="module" crossorigin src="/assets/admin/{{ $js }}"></script>
     @endforeach
-  @else
-    {{-- Fallback: hardcoded paths for backward compatibility --}}
-    <script type="module" crossorigin src="/assets/admin/assets/index.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/admin/assets/index.css" />
-    <link rel="stylesheet" crossorigin href="/assets/admin/assets/vendor.css">
-    <script src="/assets/admin/locales/en-US.js"></script>
-    <script src="/assets/admin/locales/zh-CN.js"></script>
-    <script src="/assets/admin/locales/ko-KR.js"></script>
   @endif
-  @if(!empty($adminEntries['__editor_css']) && preg_match('/\Aadmin-editor-[a-f0-9]{12}\.css\z/D', $adminEntries['__editor_css']))
-    <link rel="stylesheet" href="/assets/xboard-u/{{ $adminEntries['__editor_css'] }}" />
-  @endif
-  <script src="/assets/xboard-u/admin.js?v=0.1.0"></script>
 </head>
 
 <body>

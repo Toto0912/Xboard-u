@@ -1,3 +1,13 @@
+FROM node:22-alpine AS admin-builder
+
+WORKDIR /admin-frontend
+
+COPY admin-frontend/package.json admin-frontend/package-lock.json ./
+RUN npm ci
+
+COPY admin-frontend/ ./
+RUN npm run build -- --outDir /admin-dist --emptyOutDir
+
 FROM phpswoole/swoole:php8.2-alpine AS runtime
 
 RUN php -r 'if (version_compare(PHP_VERSION, "8.2.35", "<")) { \
@@ -44,10 +54,11 @@ WORKDIR /www
 
 COPY .docker /
 
-# Build the checked-out fork, including its pinned admin assets. Never fetch
-# another repository here: doing so silently discards local fixes.
+# Build the checked-out fork, replacing public/assets/admin with the open-source admin build.
 COPY . /www
-RUN test -s public/assets/admin/index.html
+RUN rm -rf /www/public/assets/admin
+COPY --from=admin-builder /admin-dist /www/public/assets/admin
+RUN test -s public/assets/admin/index.html && test -s public/assets/admin/manifest.json
 
 COPY .docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .docker/caddy/Caddyfile /etc/caddy/Caddyfile
@@ -55,7 +66,6 @@ COPY .docker/php/zz-xboard.ini /usr/local/etc/php/conf.d/zz-xboard.ini
 
 RUN mkdir -p bootstrap/cache storage/logs storage/framework/cache/data storage/framework/sessions storage/framework/views \
     && composer install --no-cache --no-dev --no-security-blocking \
-    && php scripts/prepare-admin-assets.php \
     && php artisan storage:link \
     && chown -R www:www /www \
     && chmod -R 775 /www \
