@@ -6,7 +6,7 @@ use RuntimeException;
 
 final class AdminAssetPatcher
 {
-    // The upstream distributes compiled admin assets. Keep the submodule
+    // The compiled admin assets are vendored under public/assets/admin. Keep them
     // untouched and generate a small, reproducible extension during builds.
     private const UPSTREAM_SHA256 = 'f04f09a95bfdb04fa5132e336bf87c364d4e360cb95774872ff18eb69e9bcd77';
 
@@ -219,7 +219,7 @@ final class AdminAssetPatcher
         $manifest = json_decode(file_get_contents($admin . '/manifest.json'), true, flags: JSON_THROW_ON_ERROR);
         $entry = $manifest['index.html']['file'] ?? '';
         if (!preg_match('/\Aassets\/[a-zA-Z0-9_-]+\.js\z/D', $entry)) {
-            throw new RuntimeException('Missing pinned admin entry. Initialize the admin submodule.');
+            throw new RuntimeException('Missing vendored admin entry under public/assets/admin.');
         }
         $source = file_get_contents($admin . '/' . $entry);
         $component = self::readComponents($root);

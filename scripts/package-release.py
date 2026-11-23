@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build release assets from tracked files, including the pinned admin submodule."""
+"""Build release assets from tracked files, including vendored admin assets."""
 import hashlib
 import pathlib
 import re
@@ -29,9 +29,10 @@ def tracked(directory):
 
 admin = "public/assets/admin"
 if not (root / admin / "index.html").is_file():
-    raise SystemExit("Initialize the pinned admin submodule first")
-paths = [p for p in tracked(root) if p != admin]
-paths += [f"{admin}/{p}" for p in tracked(root / admin)]
+    raise SystemExit("Missing vendored admin assets under public/assets/admin")
+paths = tracked(root)
+if f"{admin}/index.html" not in paths:
+    raise SystemExit("Vendored admin assets are not tracked in git")
 with tarfile.open(out / "xboard-u-source-with-admin.tar.gz", "w:gz") as archive:
     for path in sorted(paths):
         # Do not follow symlinks, include untracked runtime files, or traverse dirs.
