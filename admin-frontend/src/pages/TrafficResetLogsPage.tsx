@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, Search } from 'lucide-react';
 import { fetchTrafficResetLogs } from '@/api/trafficReset';
 import { DataTablePagination } from '@/components/shared/DataTablePagination';
+import { DatePicker } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,24 +159,26 @@ export default function TrafficResetLogsPage() {
           </SelectContent>
         </Select>
 
-        <Input
-          type="date"
-          className="h-8 w-[135px] font-mono text-xs"
+        <DatePicker
           value={startDate}
-          onChange={(e) => {
-            setStartDate(e.target.value);
+          onChange={(v) => {
+            setStartDate(v);
             setPage(1);
           }}
+          placeholder={t('trafficReset.startDate')}
+          allowClear
+          className="h-8 w-[145px]"
         />
 
-        <Input
-          type="date"
-          className="h-8 w-[135px] font-mono text-xs"
+        <DatePicker
           value={endDate}
-          onChange={(e) => {
-            setEndDate(e.target.value);
+          onChange={(v) => {
+            setEndDate(v);
             setPage(1);
           }}
+          placeholder={t('trafficReset.endDate')}
+          allowClear
+          className="h-8 w-[145px]"
         />
 
         <div className="ml-auto flex items-center gap-2">

@@ -23,6 +23,7 @@ import {
 import { fetchPlans, LEGACY_PERIOD_KEYS } from '@/api/plan';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTablePagination } from '@/components/shared/DataTablePagination';
+import { DateTimePicker } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -538,24 +539,49 @@ export default function CouponManagePage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('coupon.startedAt')}</Label>
-                  <Input
-                    type="datetime-local"
-                    value={startedAt}
-                    onChange={(e) => setStartedAt(e.target.value)}
-                    className="font-mono text-xs"
-                  />
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      [7, 'preset1Week'],
+                      [14, 'preset2Weeks'],
+                      [30, 'preset1Month'],
+                      [90, 'preset3Months'],
+                      [180, 'preset6Months'],
+                      [365, 'preset1Year'],
+                    ] as const
+                  ).map(([days, key]) => (
+                    <Button
+                      key={days}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        const now = new Date();
+                        const end = new Date(now.getTime() + days * 86_400_000);
+                        const fmt = (d: Date) => {
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        };
+                        setStartedAt(fmt(now));
+                        setEndedAt(fmt(end));
+                      }}
+                    >
+                      {t(`common.datePicker.${key}`)}
+                    </Button>
+                  ))}
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">{t('coupon.endedAt')}</Label>
-                  <Input
-                    type="datetime-local"
-                    value={endedAt}
-                    onChange={(e) => setEndedAt(e.target.value)}
-                    className="font-mono text-xs"
-                  />
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('coupon.startedAt')}</Label>
+                    <DateTimePicker value={startedAt} onChange={setStartedAt} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">{t('coupon.endedAt')}</Label>
+                    <DateTimePicker value={endedAt} onChange={setEndedAt} />
+                  </div>
                 </div>
               </div>
 

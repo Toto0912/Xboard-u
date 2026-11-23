@@ -25,6 +25,7 @@ import type { ServerRouteItem } from '@/api/serverRoute';
 import { AdvancedSettingsDialog } from '@/components/server/AdvancedSettingsDialog';
 import { ProtocolFields } from '@/components/server/ProtocolFields';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { TimePicker } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -433,24 +434,22 @@ export function NodeEditorDialog({
                       <div className="space-y-2 rounded-lg border bg-[var(--input-bg)] p-3">
                         {rateTimeRanges.map((r, idx) => (
                           <div key={idx} className="flex items-center gap-2">
-                            <Input
-                              type="time"
-                              className="h-8 font-mono text-xs"
+                            <TimePicker
+                              className="w-28"
                               value={r.start}
-                              onChange={(e) => {
+                              onChange={(val) => {
                                 const next = [...rateTimeRanges];
-                                next[idx] = { ...r, start: e.target.value };
+                                next[idx] = { ...r, start: val };
                                 setRateTimeRanges(next);
                               }}
                             />
                             <span className="text-xs text-muted-foreground">→</span>
-                            <Input
-                              type="time"
-                              className="h-8 font-mono text-xs"
+                            <TimePicker
+                              className="w-28"
                               value={r.end}
-                              onChange={(e) => {
+                              onChange={(val) => {
                                 const next = [...rateTimeRanges];
-                                next[idx] = { ...r, end: e.target.value };
+                                next[idx] = { ...r, end: val };
                                 setRateTimeRanges(next);
                               }}
                             />

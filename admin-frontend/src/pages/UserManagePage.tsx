@@ -42,6 +42,7 @@ import {
 } from '@/api/user';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTablePagination } from '@/components/shared/DataTablePagination';
+import { DateTimePicker, type DateTimePreset } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -780,11 +781,46 @@ export default function UserManagePage() {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('userManage.expiredAt')}</Label>
-                <Input
-                  type="datetime-local"
-                  className="font-mono text-xs"
+                <DateTimePicker
                   value={createExpiredAt}
-                  onChange={(e) => setCreateExpiredAt(e.target.value)}
+                  onChange={setCreateExpiredAt}
+                  allowClear
+                  placeholder={t('userManage.expiredAtHint')}
+                  presets={
+                    [
+                      { label: t('common.datePicker.permanent'), getValue: () => '' },
+                      {
+                        label: t('common.datePicker.plus1Month'),
+                        getValue: () => {
+                          const d = new Date();
+                          d.setMonth(d.getMonth() + 1);
+                          d.setHours(23, 59, 0, 0);
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        },
+                      },
+                      {
+                        label: t('common.datePicker.plus3Months'),
+                        getValue: () => {
+                          const d = new Date();
+                          d.setMonth(d.getMonth() + 3);
+                          d.setHours(23, 59, 0, 0);
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        },
+                      },
+                      {
+                        label: t('common.datePicker.plus1Year'),
+                        getValue: () => {
+                          const d = new Date();
+                          d.setFullYear(d.getFullYear() + 1);
+                          d.setHours(23, 59, 0, 0);
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                        },
+                      },
+                    ] satisfies DateTimePreset[]
+                  }
                 />
               </div>
               <div className="space-y-1.5">

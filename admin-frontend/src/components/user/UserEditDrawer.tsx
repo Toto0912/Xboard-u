@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { PlanRecord } from '@/api/plan';
 import { updateUser, type UserRecord } from '@/api/user';
+import { DateTimePicker, type DateTimePreset } from '@/components/shared/DateTimePicker';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -270,11 +271,43 @@ export function UserEditDrawer({
 
             <div className="space-y-1.5">
               <Label className="text-xs">{t('userManage.expiredAt')}</Label>
-              <Input
-                type="datetime-local"
-                className="font-mono text-xs"
+              <DateTimePicker
                 value={expiredAt}
-                onChange={(e) => setExpiredAt(e.target.value)}
+                onChange={setExpiredAt}
+                allowClear
+                placeholder={t('userManage.expiredAtHint')}
+                presets={
+                  [
+                    { label: t('common.datePicker.permanent'), getValue: () => '' },
+                    {
+                      label: t('common.datePicker.plus1Month'),
+                      getValue: () => {
+                        const d = new Date();
+                        d.setMonth(d.getMonth() + 1);
+                        d.setHours(23, 59, 0, 0);
+                        return toDatetimeLocal(Math.floor(d.getTime() / 1000));
+                      },
+                    },
+                    {
+                      label: t('common.datePicker.plus3Months'),
+                      getValue: () => {
+                        const d = new Date();
+                        d.setMonth(d.getMonth() + 3);
+                        d.setHours(23, 59, 0, 0);
+                        return toDatetimeLocal(Math.floor(d.getTime() / 1000));
+                      },
+                    },
+                    {
+                      label: t('common.datePicker.plus1Year'),
+                      getValue: () => {
+                        const d = new Date();
+                        d.setFullYear(d.getFullYear() + 1);
+                        d.setHours(23, 59, 0, 0);
+                        return toDatetimeLocal(Math.floor(d.getTime() / 1000));
+                      },
+                    },
+                  ] satisfies DateTimePreset[]
+                }
               />
               <p className="text-[11px] text-muted-foreground">{t('userManage.expiredAtHint')}</p>
             </div>

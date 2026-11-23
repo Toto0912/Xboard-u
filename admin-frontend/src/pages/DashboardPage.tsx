@@ -40,6 +40,7 @@ import {
 } from '@/api/dashboard';
 import { formatBytes, formatCurrency, formatPercent, formatTimestamp } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { DateRangePicker } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,8 +60,8 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 
-type DatePreset = '7d' | '30d' | 'month';
-type RankRange = 'today' | 'yesterday' | '7d' | '30d';
+type DatePreset = '7d' | '30d' | 'month' | 'custom';
+type RankRange = 'today' | 'yesterday' | '7d' | '30d' | 'custom';
 
 function formatIsoDate(d: Date): string {
   const y = d.getFullYear();
@@ -69,7 +70,16 @@ function formatIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function getDateRange(preset: DatePreset): { start_date: string; end_date: string } {
+function getDateRange(
+  preset: DatePreset,
+  customRange: { from: Date; to: Date },
+): { start_date: string; end_date: string } {
+  if (preset === 'custom') {
+    return {
+      start_date: formatIsoDate(customRange.from),
+      end_date: formatIsoDate(customRange.to),
+    };
+  }
   const now = new Date();
   const end = formatIsoDate(now);
   if (preset === 'month') {
@@ -81,7 +91,26 @@ function getDateRange(preset: DatePreset): { start_date: string; end_date: strin
   return { start_date: formatIsoDate(start), end_date: end };
 }
 
-function getRankTimestamps(range: RankRange): { start_time: number; end_time: number } {
+function getRankTimestamps(
+  range: RankRange,
+  customRange: { from: Date; to: Date },
+): { start_time: number; end_time: number } {
+  if (range === 'custom') {
+    const start = new Date(
+      customRange.from.getFullYear(),
+      customRange.from.getMonth(),
+      customRange.from.getDate(),
+    );
+    const end = new Date(
+      customRange.to.getFullYear(),
+      customRange.to.getMonth(),
+      customRange.to.getDate() + 1,
+    );
+    return {
+      start_time: Math.floor(start.getTime() / 1000),
+      end_time: Math.floor(end.getTime() / 1000) - 1,
+    };
+  }
   const end = Math.floor(Date.now() / 1000);
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -127,10 +156,15 @@ function TrafficRankCard({
 }) {
   const { t } = useTranslation();
   const [range, setRange] = useState<RankRange>('today');
-  const windowRange = useMemo(() => getRankTimestamps(range), [range]);
+  const [customPickerOpen, setCustomPickerOpen] = useState(false);
+  const [customRange, setCustomRange] = useState<{ from: Date; to: Date }>(() => ({
+    from: new Date(Date.now() - 6 * 86_400_000),
+    to: new Date(),
+  }));
+  const windowRange = useMemo(() => getRankTimestamps(range, customRange), [range, customRange]);
 
   const query = useQuery({
-    queryKey: ['dashboard-traffic-rank', type, range],
+    queryKey: ['dashboard-traffic-rank', type, range, windowRange.start_time, windowRange.end_time],
     queryFn: () => getTrafficRank({ type, ...windowRange }),
   });
 
@@ -139,24 +173,53 @@ function TrafficRankCard({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-4">
-        <div className="flex items-center gap-2">
-          <Icon className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-base font-medium">{title}</CardTitle>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={range} onValueChange={(v) => setRange(v as RankRange)}>
-            <SelectTrigger className="h-8 w-28 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">{t('dashboard.today')}</SelectItem>
-              <SelectItem value="yesterday">{t('dashboard.yesterday')}</SelectItem>
-              <SelectItem value="7d">{t('dashboard.last7d')}</SelectItem>
-              <SelectItem value="30d">{t('dashboard.last30d')}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Activity className="h-4 w-4 text-muted-foreground" />
+      <CardHeader className="space-y-0 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <CardTitle className="whitespace-nowrap text-base font-medium">{title}</CardTitle>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="inline-flex h-8 items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
+              <Select
+                value={range}
+                onValueChange={(v) => {
+                  const next = v as RankRange;
+                  setRange(next);
+                  if (next === 'custom') {
+                    setTimeout(() => setCustomPickerOpen(true), 60);
+                  } else {
+                    setCustomPickerOpen(false);
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-[92px] gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">{t('dashboard.today')}</SelectItem>
+                  <SelectItem value="yesterday">{t('dashboard.yesterday')}</SelectItem>
+                  <SelectItem value="7d">{t('dashboard.last7d')}</SelectItem>
+                  <SelectItem value="30d">{t('dashboard.last30d')}</SelectItem>
+                  <SelectItem value="custom">{t('dashboard.customRange')}</SelectItem>
+                </SelectContent>
+              </Select>
+              {range === 'custom' && (
+                <>
+                  <div className="h-4 w-px bg-border" />
+                  <DateRangePicker
+                    variant="ghost"
+                    open={customPickerOpen}
+                    onOpenChange={setCustomPickerOpen}
+                    value={customRange}
+                    onChange={setCustomRange}
+                    className="h-7 rounded-l-none px-2 hover:bg-accent/50"
+                  />
+                </>
+              )}
+            </div>
+            <Activity className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -210,10 +273,18 @@ export default function DashboardPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [datePreset, setDatePreset] = useState<DatePreset>('30d');
+  const [orderPickerOpen, setOrderPickerOpen] = useState(false);
+  const [customOrderRange, setCustomOrderRange] = useState<{ from: Date; to: Date }>(() => ({
+    from: new Date(Date.now() - 29 * 86_400_000),
+    to: new Date(),
+  }));
   const [orderMetric, setOrderMetric] = useState<OrderMetricType>('paid_total');
   const [failedJobsOpen, setFailedJobsOpen] = useState(false);
 
-  const dateRange = useMemo(() => getDateRange(datePreset), [datePreset]);
+  const dateRange = useMemo(
+    () => getDateRange(datePreset, customOrderRange),
+    [datePreset, customOrderRange],
+  );
 
   const configQuery = useQuery({
     queryKey: ['admin-config'],
@@ -498,28 +569,42 @@ export default function DashboardPage() {
               <CardDescription>{t('dashboard.orderTrendDesc')}</CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-md border bg-muted/40 p-0.5 text-xs">
-                {(
-                  [
-                    ['7d', t('dashboard.last7d')],
-                    ['30d', t('dashboard.last30d')],
-                    ['month', t('dashboard.thisMonth')],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setDatePreset(key)}
-                    className={cn(
-                      'rounded px-2.5 py-1 transition-colors cursor-pointer',
-                      datePreset === key
-                        ? 'bg-background font-medium text-foreground shadow-xs'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div className="inline-flex h-8 items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
+                <Select
+                  value={datePreset}
+                  onValueChange={(v) => {
+                    const next = v as DatePreset;
+                    setDatePreset(next);
+                    if (next === 'custom') {
+                      setTimeout(() => setOrderPickerOpen(true), 60);
+                    } else {
+                      setOrderPickerOpen(false);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-auto min-w-[92px] gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7d">{t('dashboard.last7d')}</SelectItem>
+                    <SelectItem value="30d">{t('dashboard.last30d')}</SelectItem>
+                    <SelectItem value="month">{t('dashboard.thisMonth')}</SelectItem>
+                    <SelectItem value="custom">{t('dashboard.customRange')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {datePreset === 'custom' && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <DateRangePicker
+                      variant="ghost"
+                      open={orderPickerOpen}
+                      onOpenChange={setOrderPickerOpen}
+                      value={customOrderRange}
+                      onChange={setCustomOrderRange}
+                      className="h-7 rounded-l-none px-2 hover:bg-accent/50"
+                    />
+                  </>
+                )}
               </div>
               <div className="inline-flex rounded-md border bg-muted/40 p-0.5 text-xs">
                 {(
