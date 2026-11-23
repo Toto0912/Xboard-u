@@ -1,4 +1,4 @@
-FROM node:22-alpine AS admin-builder
+FROM --platform=$BUILDPLATFORM node:22-alpine AS admin-builder
 
 WORKDIR /admin-frontend
 
