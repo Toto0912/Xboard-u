@@ -88,10 +88,10 @@ function getRankTimestamps(range: RankRange): { start_time: number; end_time: nu
   const todaySec = Math.floor(todayStart.getTime() / 1000);
 
   if (range === 'today') {
-    return { start_time: todaySec, end_time: end };
+    return { start_time: todaySec, end_time: todaySec + 86400 };
   }
   if (range === 'yesterday') {
-    return { start_time: todaySec - 86400, end_time: todaySec };
+    return { start_time: todaySec - 86400, end_time: todaySec - 1 };
   }
   const days = range === '7d' ? 7 : 30;
   return { start_time: end - days * 86400, end_time: end };
@@ -161,17 +161,17 @@ function TrafficRankCard({
       </CardHeader>
       <CardContent>
         {query.isLoading ? (
-          <div className="space-y-2.5">
+          <div className="h-[400px] space-y-2.5 overflow-hidden">
             <Skeleton className="h-14 w-full" />
             <Skeleton className="h-14 w-full" />
             <Skeleton className="h-14 w-full" />
           </div>
         ) : items.length === 0 ? (
-          <div className="flex h-48 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+          <div className="flex h-[400px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
             {t('dashboard.noRankData')}
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="h-[400px] space-y-2.5 overflow-y-auto pr-2">
             {items.map((item) => {
               const val = Number(item.value || 0);
               const pct =
