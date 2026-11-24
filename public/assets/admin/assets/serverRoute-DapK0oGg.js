@@ -1,1 +1,0 @@
-import{i as r}from"./index-D6k8KguP.js";async function a(){return(await r("/server/route/fetch")).data||[]}async function s(e){return!!(await r("/server/route/save",{method:"POST",body:e})).data}async function n(e){return!!(await r("/server/route/drop",{method:"POST",body:{id:e}})).data}export{n as d,a as f,s};

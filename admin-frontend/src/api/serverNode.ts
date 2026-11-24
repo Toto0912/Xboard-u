@@ -82,14 +82,21 @@ export interface ServerNodeItem {
   cdn_settings?: CdnSettings | null;
 }
 
-/** Normalize an ID list from legacy string/mixed arrays into deduplicated positive integers. */
+/** Normalize an ID list from legacy numeric/digit-string arrays into deduplicated positive safe integers. */
 export function normalizeNumericIds(ids: unknown): number[] {
   if (!Array.isArray(ids)) return [];
   const seen = new Set<number>();
   const result: number[] = [];
   for (const raw of ids) {
-    const num = Number(raw);
-    if (Number.isInteger(num) && num > 0 && !seen.has(num)) {
+    let num: number;
+    if (typeof raw === 'number') {
+      num = raw;
+    } else if (typeof raw === 'string' && /^\s*\d+\s*$/.test(raw)) {
+      num = Number(raw.trim());
+    } else {
+      continue;
+    }
+    if (Number.isSafeInteger(num) && num > 0 && !seen.has(num)) {
       seen.add(num);
       result.push(num);
     }
