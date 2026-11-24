@@ -225,7 +225,28 @@
     "queueName": "队列名称",
     "queueLength": "积压数",
     "queueWait": "等待耗时",
-    "queueProcesses": "进程数"
+    "queueProcesses": "进程数",
+    "scheduleTooltipTitle": "计划任务（Scheduler）",
+    "scheduleTooltipDesc": "每分钟定时触发后台运维任务（订单超时关闭、佣金结算、工单检查、流量重置、每日统计与到期提醒）。最近 120 秒内有心跳即显示“运行中”。",
+    "horizonTooltipTitle": "Horizon 异步队列",
+    "horizonTooltipDesc": "管理基于 Redis 的异步工作进程池，负责邮件／Telegram 推送、订单处理、节点配置同步及流量统计落库。主控进程存活且未暂停即显示“运行中”。",
+    "queuePools": {
+      "business": "业务与订单队列",
+      "notification": "节点同步与消息通知队列",
+      "data_pipeline": "流量上报与统计队列",
+      "all": "全功能共享队列"
+    },
+    "queueItems": {
+      "default": "通用默认任务",
+      "order_handle": "订单支付后异步开通、续费与结算",
+      "node_sync": "节点用户与配置变更同步（高优先级）",
+      "send_telegram": "Telegram Bot 通知推送",
+      "send_email": "即时单发邮件（验证码、重置密码等）",
+      "send_email_mass": "批量群发邮件（与即时邮件隔离）",
+      "traffic_fetch": "节点上报的用户原始流量异步扣减",
+      "stat": "节点与用户维度流量统计汇总",
+      "user_alive_sync": "用户在线设备／IP 存活快照同步"
+    }
   },
   "config": {
     "subtitle": "管理站点基础参数、安全防护、订阅规则、模板、邮件及通知渠道",

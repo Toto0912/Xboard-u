@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -15,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { FLAT_NAV_ITEMS } from '@/config/navigation';
 import { changeAppLanguage, SUPPORTED_LANGUAGES, type SupportedLanguage } from '@/i18n';
+import { apiRequest } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore, type ThemeMode } from '@/stores/ui';
 import { Button } from '@/components/ui/button';
@@ -30,14 +32,27 @@ export function Header() {
   const { t, i18n } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const { theme, setTheme, toggleSidebarCollapsed, setMobileSidebarOpen, setSearchOpen } =
     useUiStore();
+
+  const accountQuery = useQuery({
+    queryKey: ['admin-account-info', token],
+    queryFn: async () => {
+      const res = await apiRequest<{ email?: string }>('/user/info', { silentError: true });
+      return res.data;
+    },
+    enabled: Boolean(token),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const currentItem = FLAT_NAV_ITEMS.find((item) => item.href === location.pathname);
 
   const handleLogout = () => {
     logout();
+    queryClient.clear();
     toast.success(t('common.signedOut'));
     void navigate('/sign-in', { replace: true });
   };
@@ -154,8 +169,11 @@ export function Header() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <div className="px-2.5 py-1.5 text-xs text-muted-foreground">
-              {t('common.appName')}
+            <div
+              className="max-w-[240px] truncate px-2.5 py-1.5 text-xs font-medium text-foreground"
+              title={accountQuery.data?.email || undefined}
+            >
+              {accountQuery.data?.email || '—'}
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">

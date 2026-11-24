@@ -225,7 +225,28 @@
     "queueName": "Queue",
     "queueLength": "Length",
     "queueWait": "Wait",
-    "queueProcesses": "Processes"
+    "queueProcesses": "Processes",
+    "scheduleTooltipTitle": "Task Scheduler",
+    "scheduleTooltipDesc": "Runs periodic maintenance every minute (order expiry, commission checks, ticket cleanup, traffic resets, daily stats and reminder emails). Shows \"Running\" when active within the last 120s.",
+    "horizonTooltipTitle": "Horizon Queue Worker",
+    "horizonTooltipDesc": "Manages Redis-backed async workers for emails, Telegram notifications, order fulfillment, node sync and traffic stats. Shows \"Running\" while master supervisors are active and unpaused.",
+    "queuePools": {
+      "business": "Business & Orders Pool",
+      "notification": "Node Sync & Notifications Pool",
+      "data_pipeline": "Traffic & Statistics Pool",
+      "all": "Shared All-in-One Pool"
+    },
+    "queueItems": {
+      "default": "Default tasks",
+      "order_handle": "Async order activation, renewal & settlement",
+      "node_sync": "High-priority node user & config sync",
+      "send_telegram": "Telegram Bot notifications",
+      "send_email": "Instant emails (verification codes, password reset)",
+      "send_email_mass": "Bulk campaign / reminder emails (isolated)",
+      "traffic_fetch": "Async ingestion of node-reported user traffic",
+      "stat": "Per-node & per-user traffic stat aggregation",
+      "user_alive_sync": "Online user device / IP heartbeat snapshot sync"
+    }
   },
   "config": {
     "subtitle": "Manage site settings, security, subscriptions, templates, mail and bots",

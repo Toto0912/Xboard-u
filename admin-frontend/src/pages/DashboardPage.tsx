@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +11,7 @@ import {
   Clock,
   DollarSign,
   HardDrive,
+  Info,
   Network,
   RefreshCw,
   Server,
@@ -43,6 +45,7 @@ import { cn } from '@/lib/utils';
 import { DateRangePicker } from '@/components/shared/DateTimePicker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
@@ -124,6 +127,52 @@ function getRankTimestamps(
   }
   const days = range === '7d' ? 7 : 30;
   return { start_time: end - days * 86400, end_time: end };
+}
+
+const QUEUE_POOL_SIGNATURES: Array<{ tokens: string[]; key: string }> = [
+  { tokens: ['default', 'order_handle'], key: 'business' },
+  { tokens: ['node_sync', 'send_email', 'send_email_mass', 'send_telegram'], key: 'notification' },
+  { tokens: ['stat', 'traffic_fetch', 'user_alive_sync'], key: 'data_pipeline' },
+  {
+    tokens: [
+      'default',
+      'node_sync',
+      'order_handle',
+      'send_email',
+      'send_email_mass',
+      'send_telegram',
+      'stat',
+      'traffic_fetch',
+      'user_alive_sync',
+    ],
+    key: 'all',
+  },
+];
+
+function getQueueMeta(rawName: string, t: TFunction) {
+  const tokens = rawName
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const sortedKey = [...new Set(tokens)].sort().join(',');
+  const matchedPool = QUEUE_POOL_SIGNATURES.find((p) => p.tokens.join(',') === sortedKey);
+
+  let title = rawName;
+  if (matchedPool) {
+    title = t(`dashboard.queuePools.${matchedPool.key}`);
+  } else if (tokens.length === 1) {
+    const single = t(`dashboard.queueItems.${tokens[0]}`, { defaultValue: '' });
+    if (single) title = single;
+  }
+
+  const details = tokens
+    .map((code) => ({
+      code,
+      desc: t(`dashboard.queueItems.${code}`, { defaultValue: '' }),
+    }))
+    .filter((item) => Boolean(item.desc));
+
+  return { title, details };
 }
 
 function GrowthPill({ value }: { value: number }) {
@@ -350,25 +399,54 @@ export default function DashboardPage() {
         <div className="flex flex-wrap items-center gap-2">
           {sysStatus && (
             <>
-              <Badge variant={sysStatus.schedule ? 'success' : 'destructive'} className="gap-1.5">
-                <span
-                  className={cn(
-                    'h-1.5 w-1.5 rounded-full',
-                    sysStatus.schedule ? 'bg-emerald-500' : 'bg-rose-500',
-                  )}
-                />
-                {t('dashboard.schedule')}:{' '}
-                {sysStatus.schedule ? t('dashboard.running') : t('dashboard.stopped')}
-              </Badge>
-              <Badge variant={sysStatus.horizon ? 'success' : 'destructive'} className="gap-1.5">
-                <span
-                  className={cn(
-                    'h-1.5 w-1.5 rounded-full',
-                    sysStatus.horizon ? 'bg-emerald-500' : 'bg-rose-500',
-                  )}
-                />
-                Horizon: {sysStatus.horizon ? t('dashboard.running') : t('dashboard.stopped')}
-              </Badge>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Badge variant={sysStatus.schedule ? 'success' : 'destructive'} className="gap-1.5">
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 rounded-full',
+                          sysStatus.schedule ? 'bg-emerald-500' : 'bg-rose-500',
+                        )}
+                      />
+                      {t('dashboard.schedule')}:{' '}
+                      {sysStatus.schedule ? t('dashboard.running') : t('dashboard.stopped')}
+                    </Badge>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  align="end"
+                  className="max-w-xs space-y-1 border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md"
+                >
+                  <div className="font-semibold text-foreground">{t('dashboard.scheduleTooltipTitle')}</div>
+                  <p className="text-muted-foreground">{t('dashboard.scheduleTooltipDesc')}</p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="inline-flex cursor-help rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Badge variant={sysStatus.horizon ? 'success' : 'destructive'} className="gap-1.5">
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 rounded-full',
+                          sysStatus.horizon ? 'bg-emerald-500' : 'bg-rose-500',
+                        )}
+                      />
+                      Horizon: {sysStatus.horizon ? t('dashboard.running') : t('dashboard.stopped')}
+                    </Badge>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="bottom"
+                  align="end"
+                  className="max-w-xs space-y-1 border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md"
+                >
+                  <div className="font-semibold text-foreground">{t('dashboard.horizonTooltipTitle')}</div>
+                  <p className="text-muted-foreground">{t('dashboard.horizonTooltipDesc')}</p>
+                </TooltipContent>
+              </Tooltip>
             </>
           )}
           <Button
@@ -755,14 +833,57 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {workload.map((q) => (
-                    <tr key={q.name}>
-                      <td className="px-3 py-2 font-mono">{q.name}</td>
-                      <td className="px-3 py-2">{q.length}</td>
-                      <td className="px-3 py-2">{q.wait}s</td>
-                      <td className="px-3 py-2">{q.processes}</td>
-                    </tr>
-                  ))}
+                  {workload.map((q) => {
+                    const meta = getQueueMeta(q.name, t);
+                    return (
+                      <tr key={q.name}>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-0.5">
+                            {meta.details.length > 0 ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    tabIndex={0}
+                                    className="inline-flex w-fit cursor-help items-center gap-1.5 font-medium text-foreground"
+                                  >
+                                    <span>{meta.title}</span>
+                                    <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="top"
+                                  align="start"
+                                  className="max-w-sm space-y-1.5 border bg-popover px-3 py-2.5 text-xs leading-relaxed text-popover-foreground shadow-md"
+                                >
+                                  <div className="font-semibold text-foreground">{meta.title}</div>
+                                  <ul className="space-y-1">
+                                    {meta.details.map((item) => (
+                                      <li key={item.code} className="flex flex-col">
+                                        <span className="font-mono text-[11px] font-medium text-foreground">
+                                          {item.code}
+                                        </span>
+                                        <span className="text-muted-foreground">{item.desc}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </TooltipContent>
+                              </Tooltip>
+                            ) : (
+                              <span className="font-medium text-foreground">{meta.title}</span>
+                            )}
+                            {meta.title !== q.name && (
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {q.name}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">{q.length}</td>
+                        <td className="px-3 py-2">{q.wait}s</td>
+                        <td className="px-3 py-2">{q.processes}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
