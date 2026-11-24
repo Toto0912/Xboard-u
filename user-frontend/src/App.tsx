@@ -99,7 +99,13 @@ export default function App() {
           </Routes>
         </Suspense>
       </HashRouter>
-      <Toaster position="top-right" richColors theme={resolvedTheme} />
+      <Toaster
+        position="top-center"
+        richColors
+        theme={resolvedTheme}
+        duration={2500}
+        offset={{ top: 12 }}
+      />
     </QueryClientProvider>
   );
 }

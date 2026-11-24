@@ -117,3 +117,12 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   }
 }
+
+/* Non-blocking toasts: pass pointer events through and never pause auto-dismiss on hover */
+[data-sonner-toaster],
+[data-sonner-toast] {
+  pointer-events: none !important;
+}
+[data-sonner-toast] button {
+  pointer-events: auto;
+}

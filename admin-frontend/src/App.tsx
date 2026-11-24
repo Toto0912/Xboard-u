@@ -33,12 +33,20 @@ function ThemeSync() {
 }
 
 export default function App() {
+  const theme = useUiStore((s) => s.theme);
+
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <ThemeSync />
         <RouterProvider router={router} />
-        <Toaster richColors position="top-right" />
+        <Toaster
+          richColors
+          theme={theme}
+          position="top-center"
+          duration={2500}
+          offset={{ top: 12 }}
+        />
       </TooltipProvider>
     </QueryClientProvider>
   );

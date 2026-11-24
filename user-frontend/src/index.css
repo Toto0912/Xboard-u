@@ -207,3 +207,12 @@
 .prose-user .v2board-no-access {
   @apply my-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs font-medium text-amber-700 dark:text-amber-300;
 }
+
+/* Non-blocking toasts: pass pointer events through and never pause auto-dismiss on hover */
+[data-sonner-toaster],
+[data-sonner-toast] {
+  pointer-events: none !important;
+}
+[data-sonner-toast] button {
+  pointer-events: auto;
+}
