@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { apiRequest } from '@/lib/api';
 import { getPanelSettings } from '@/lib/settings';
 import { useAuthStore } from '@/stores/auth';
+import { PreferenceControls } from '@/components/layout/PreferenceControls';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -119,7 +120,11 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-muted/30 px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-muted/30 px-4 pt-16 pb-12 sm:py-12">
+      <div className="absolute right-4 top-4 flex items-center gap-2 sm:right-6 sm:top-6">
+        <PreferenceControls buttonVariant="outline" />
+      </div>
+
       <div className="mb-6 flex items-center gap-2.5">
         {logo ? (
           <img src={logo} alt={title} className="h-9 w-9 rounded-lg object-contain" />
