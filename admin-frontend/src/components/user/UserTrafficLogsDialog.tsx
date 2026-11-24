@@ -194,25 +194,29 @@ export function UserTrafficLogsDialog({
               </thead>
               <tbody className="divide-y">
                 {records.map((row) => {
-                  const rowUpload = Number(row.u ?? 0);
-                  const rowDownload = Number(row.d ?? 0);
-                  const rowTotal = rowUpload + rowDownload;
+                  const rawRate = Number(row.server_rate);
+                  const rate = Number.isFinite(rawRate) && rawRate >= 0 ? rawRate : 1;
+                  const billedUpload = Number(row.u ?? 0);
+                  const billedDownload = Number(row.d ?? 0);
+                  const billedTotal = billedUpload + billedDownload;
+                  const actualUpload = rate > 0 ? billedUpload / rate : billedUpload;
+                  const actualDownload = rate > 0 ? billedDownload / rate : billedDownload;
                   return (
                     <tr key={row.id} className="hover:bg-muted/30">
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
                         {formatRecordDate(row.record_at, row.record_type)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
-                        {formatBytes(rowUpload)}
+                        {formatBytes(actualUpload)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
-                        {formatBytes(rowDownload)}
+                        {formatBytes(actualDownload)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
-                        {Number(row.server_rate ?? 1)}x
+                        {rate}x
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-right font-mono text-xs font-medium">
-                        {formatBytes(rowTotal)}
+                        {formatBytes(billedTotal)}
                       </td>
                     </tr>
                   );

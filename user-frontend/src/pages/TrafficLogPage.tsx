@@ -65,15 +65,21 @@ export default function TrafficLogPage() {
                 </thead>
                 <tbody className="divide-y">
                   {logs.map((row, idx) => {
-                    const total = (Number(row.u || 0) + Number(row.d || 0)) * Number(row.server_rate || 1);
+                    const rawRate = Number(row.server_rate);
+                    const rate = Number.isFinite(rawRate) && rawRate >= 0 ? rawRate : 1;
+                    const billedUpload = Number(row.u ?? 0);
+                    const billedDownload = Number(row.d ?? 0);
+                    const billedTotal = billedUpload + billedDownload;
+                    const actualUpload = rate > 0 ? billedUpload / rate : billedUpload;
+                    const actualDownload = rate > 0 ? billedDownload / rate : billedDownload;
                     return (
                       <tr key={`${row.record_at}-${idx}`} className="hover:bg-muted/30">
                         <td className="px-4 py-3 font-mono text-xs">{formatDate(row.record_at)}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{formatBytes(row.u)}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{formatBytes(row.d)}</td>
-                        <td className="px-4 py-3 font-mono text-xs">{row.server_rate}x</td>
+                        <td className="px-4 py-3 font-mono text-xs">{formatBytes(actualUpload)}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{formatBytes(actualDownload)}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{rate}x</td>
                         <td className="px-4 py-3 text-right font-mono text-xs font-medium">
-                          {formatBytes(total)}
+                          {formatBytes(billedTotal)}
                         </td>
                       </tr>
                     );
