@@ -40,3 +40,6 @@ storage/laravels-timer-process.pid
 /admin-frontend/node_modules
 /admin-frontend/dist
 /admin-frontend/.env.local
+/user-frontend/node_modules
+/user-frontend/dist
+/user-frontend/.env.local

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, useLocation } from 'react-router-dom';
 import * as Collapsible from '@radix-ui/react-collapsible';
-import { ChevronDown, ChevronRight, ShieldCheck, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { ADMIN_NAVIGATION, isNavGroup, type NavGroupItem } from '@/config/navigation';
 import { getPanelSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
@@ -122,8 +122,8 @@ function SidebarContent({
           {logo ? (
             <img src={logo} alt={title} className="h-7 w-7 rounded-md object-contain shrink-0" />
           ) : (
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <ShieldCheck className="h-4 w-4" />
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+              {(title || 'X').slice(0, 1).toUpperCase()}
             </div>
           )}
           {!collapsed && <span className="truncate text-sm font-semibold tracking-tight">{title}</span>}

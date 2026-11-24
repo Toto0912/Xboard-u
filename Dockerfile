@@ -8,6 +8,16 @@ RUN npm ci
 COPY admin-frontend/ ./
 RUN npm run build -- --outDir /admin-dist --emptyOutDir
 
+FROM --platform=$BUILDPLATFORM node:22-alpine AS user-builder
+
+WORKDIR /user-frontend
+
+COPY user-frontend/package.json user-frontend/package-lock.json ./
+RUN npm ci
+
+COPY user-frontend/ ./
+RUN npm run build -- --outDir /user-dist --emptyOutDir
+
 FROM phpswoole/swoole:php8.2-alpine AS runtime
 
 RUN php -r 'if (version_compare(PHP_VERSION, "8.2.35", "<")) { \
@@ -54,11 +64,13 @@ WORKDIR /www
 
 COPY .docker /
 
-# Build the checked-out fork, replacing public/assets/admin with the open-source admin build.
+# Build the checked-out fork, replacing public/assets/admin and theme/Xboard/assets with the open-source builds.
 COPY . /www
-RUN rm -rf /www/public/assets/admin
+RUN rm -rf /www/public/assets/admin /www/theme/Xboard/assets /www/public/theme/Xboard
 COPY --from=admin-builder /admin-dist /www/public/assets/admin
-RUN test -s public/assets/admin/index.html && test -s public/assets/admin/manifest.json
+COPY --from=user-builder /user-dist /www/theme/Xboard/assets
+RUN test -s public/assets/admin/index.html && test -s public/assets/admin/manifest.json \
+    && test -s theme/Xboard/assets/index.html && test -s theme/Xboard/assets/manifest.json
 
 COPY .docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY .docker/caddy/Caddyfile /etc/caddy/Caddyfile

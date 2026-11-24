@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { apiRequest } from '@/lib/api';
@@ -124,8 +124,8 @@ export default function SignInPage() {
         {logo ? (
           <img src={logo} alt={title} className="h-9 w-9 rounded-lg object-contain" />
         ) : (
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs">
-            <ShieldCheck className="h-5 w-5" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-xs">
+            {(title || 'X').slice(0, 1).toUpperCase()}
           </div>
         )}
         <span className="text-xl font-semibold tracking-tight">{title}</span>
