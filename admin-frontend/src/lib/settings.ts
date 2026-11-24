@@ -23,7 +23,7 @@ export function getPanelSettings(): PanelSettings {
   return {
     base_url: baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`,
     title: raw.title || 'Xboard',
-    version: raw.version || 'dev',
+    version: raw.version || 'v2.4.0',
     logo: raw.logo || undefined,
     secure_path: securePath.replace(/^\/+|\/+$/g, ''),
   };

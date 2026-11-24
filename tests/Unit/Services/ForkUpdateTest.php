@@ -22,4 +22,16 @@ class ForkUpdateTest extends TestCase
         Http::assertNothingSent();
         Process::assertNothingRan();
     }
+
+    public function test_current_version_uses_clean_app_version_without_stale_cache_or_date_prefix(): void
+    {
+        Process::fake();
+        Cache::forever(UpdateService::CACHE_VERSION_DATE, '20261124');
+        Cache::forever(UpdateService::CACHE_VERSION, '2.3.0-xboard-u');
+
+        $service = new UpdateService();
+        $this->assertSame('v2.4.0', $service->getCurrentVersion());
+        $this->assertSame('v2.4.0', $service->checkForUpdates()['current_version']);
+        Process::assertNothingRan();
+    }
 }

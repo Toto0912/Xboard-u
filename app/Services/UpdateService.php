@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Process;
 
 class UpdateService
 {
@@ -14,38 +13,30 @@ class UpdateService
 
     public function getCurrentVersion(): string
     {
-        $date = Cache::get(self::CACHE_VERSION_DATE) ?? date('Ymd');
-        $version = Cache::rememberForever(self::CACHE_VERSION, fn () => $this->getCurrentCommit());
-        return $date . '-' . $version;
+        $version = trim((string) config('app.version'));
+        if ($version === '') {
+            return 'v2.4.0';
+        }
+        return str_starts_with($version, 'v') ? $version : 'v' . $version;
     }
 
     public function updateVersionCache(): void
     {
         Cache::forever(self::CACHE_VERSION_DATE, date('Ymd'));
-        Cache::forever(self::CACHE_VERSION, $this->getCurrentCommit());
+        Cache::forever(self::CACHE_VERSION, $this->getCurrentVersion());
         Cache::forget(self::CACHE_UPDATE_INFO);
-    }
-
-    protected function getCurrentCommit(): string
-    {
-        if (is_dir(base_path('.git'))) {
-            $result = Process::path(base_path())->run('git rev-parse --short=7 HEAD');
-            if ($result->successful() && trim($result->output()) !== '') {
-                return trim($result->output());
-            }
-        }
-        return (string) config('app.version');
     }
 
     public function checkForUpdates(): array
     {
         // The original updater fetches/reset-hard to the upstream project.
         // Fork deployments must keep their reviewed code and existing data.
+        $currentVersion = $this->getCurrentVersion();
         return [
             'has_update' => false,
             'is_local_newer' => false,
-            'current_version' => config('app.version'),
-            'latest_version' => config('app.version'),
+            'current_version' => $currentVersion,
+            'latest_version' => $currentVersion,
             'update_logs' => [],
             'download_url' => '',
             'published_at' => '',

@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
 import { useUiStore } from '@/stores/ui';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+const PROJECT_GITHUB_URL = 'https://github.com/Toto0912/Xboard-u';
+
 function SidebarGroup({
   group,
   collapsed,
@@ -108,6 +110,11 @@ function SidebarContent({
 }) {
   const { t } = useTranslation();
   const { title, version, logo } = getPanelSettings();
+  const displayVersion = version
+    ? version.startsWith('v')
+      ? version
+      : `v${version}`
+    : 'v2.4.0';
   const setMobileOpen = useUiStore((s) => s.setMobileSidebarOpen);
 
   return (
@@ -203,11 +210,30 @@ function SidebarContent({
 
       <div className="border-t border-sidebar-border px-3 py-2.5 text-xs text-muted-foreground">
         {collapsed ? (
-          <div className="text-center font-mono">v</div>
+          <Tooltip delayDuration={150}>
+            <TooltipTrigger asChild>
+              <a
+                href={PROJECT_GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block truncate text-center font-mono text-[10px] transition-colors hover:text-sidebar-foreground hover:underline"
+              >
+                {displayVersion}
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="right">Xboard-u {displayVersion}</TooltipContent>
+          </Tooltip>
         ) : (
-          <div className="flex items-center justify-between">
-            <span className="truncate">{t('common.openSource')}</span>
-            <span className="font-mono text-[11px]">{version}</span>
+          <div className="flex items-center justify-center gap-1.5">
+            <a
+              href={PROJECT_GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate font-medium transition-colors hover:text-sidebar-foreground hover:underline"
+            >
+              Xboard-u
+            </a>
+            <span className="shrink-0 font-mono text-[11px]">{displayVersion}</span>
           </div>
         )}
       </div>
