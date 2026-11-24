@@ -2,16 +2,17 @@
 
 基于 [cedar2025/Xboard](https://github.com/cedar2025/Xboard) 的面板二次开发项目，搭配 [xboard-node-u](https://github.com/Toto0912/xboard-node-u) 使用。
 
-当前版本：**v2.3.0**，配套节点端 xboard-node-u v2.3.0。
+当前版本：**v2.4.0**，配套节点端 xboard-node-u v2.3.0。
 
 ## 二次开发新功能（详见 [二次开发功能说明](docs/二次开发功能说明.md)）
 
-- v2.3.0 新增 [HY2 端口跳跃](docs/HY2-PORT-HOPPING.md)，支持范围端口、固定／随机间隔及节点端自动转发。
-- v2.1.1 推送到 Mihomo 内核代理工具的 Reality 订阅将自动启用 X25519MLKEM768 密钥交换选项，以兼容新版 Xray 内核。
-- v2.0.0 新增高级配置：[CDN 套用](docs/二次开发功能说明.md#v200)。推送到客户端的订阅、推送到服务端的参数可以分别设置。
-- v1.1.3 支持 Sing-box / Xray 原生自定义出站和路由，兼容旧面板出站格式。
-- v1.1.2 新增 [Fallback 回落](docs/二次开发功能说明.md#v112)功能。
-- v1.1.1 补齐 Clash Meta / Mihomo 的 [XHTTP 上下行分离订阅转换](docs/二次开发功能说明.md#v111)。
+- **v2.4.0**（已完整集成以下二次开发能力）：
+  - **全量开源管理端与用户端界面**：彻底移除原版闭源前端编译产物及补丁脚本，采用 React 19 + TypeScript + Vite 6 + Tailwind CSS v4 + Shadcn UI 完整重构管理后台（`admin-frontend/`，覆盖 18 个模块、离线版 Monaco Editor、中／英／俄三语、拖拽排序）与默认用户端（`user-frontend/`，支持 8 种语言，含 RTL），统一深海蓝／牛奶白双主题配色；不改动数据库结构，兼容平滑升级。
+  - **HY2 端口跳跃与带宽／伪装**：支持连接／服务连续端口范围、固定或随机跳跃间隔及节点端自动转发（详见 [HY2 端口跳跃](docs/HY2-PORT-HOPPING.md)），并支持 [带宽方向换算与 Masquerade 伪装](docs/HYSTERIA2.md)。
+  - **CDN 套用（客户端／服务端分离）**：支持推送到客户端的订阅参数与下发到节点的服务端监听参数分别设置与一键同步（详见 [CDN 套用](docs/二次开发功能说明.md#v200)）。
+  - **现代客户端订阅转换与默认模板升级**：补齐 Clash Meta / Mihomo 与 Stash 的 [XHTTP 上下行分离](docs/二次开发功能说明.md#v111)，为 Mihomo / Stash Reality 订阅自动启用 `X25519MLKEM768` 密钥交换，完善新版 Surge（VLESS / XHTTP / TUIC / HY2）与旧版 Clash 兼容，并刷新 Sing-box、Clash、Clash Meta / Stash、Surge 默认订阅模板。
+  - **自定义出站、路由与 Fallback 回落**：支持 Sing-box / Xray 原生[自定义出站](docs/CUSTOM-OUTBOUNDS.md)与[自定义路由](docs/CUSTOM-ROUTES.md)（兼容旧面板格式），以及 VLESS / Trojan [Fallback 回落](docs/二次开发功能说明.md#v112)。
+  - **双栈监听与在线／统计优化**：默认下发双栈监听 `listen_ip: "::"`，优化设备快照同步、队列预算与流量写入，并将节点「在线人数」调整为按最近 10 分钟内单次上报达 64 KiB 门槛去重统计。
 
 ## 🚀 Quick Start
 
