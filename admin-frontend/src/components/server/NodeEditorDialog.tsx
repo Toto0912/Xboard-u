@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import type { ServerGroupItem } from '@/api/serverGroup';
 import type { ServerMachineItem } from '@/api/serverMachine';
 import {
+  normalizeNumericIds,
   saveServerNode,
   type CdnSettings,
   type CertConfig,
@@ -53,6 +54,12 @@ import {
   PROTOCOL_LIST,
   PROTOCOL_MAP,
 } from '@/lib/serverPresets';
+
+function bytesToGbInput(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return '';
+  const gb = bytes / 1073741824;
+  return gb >= 0.01 ? String(Number(gb.toFixed(2))) : String(Number(gb.toFixed(6)));
+}
 
 interface NodeEditorDialogProps {
   open: boolean;
@@ -99,6 +106,7 @@ export function NodeEditorDialog({
   const [rateTimeEnable, setRateTimeEnable] = useState(false);
   const [rateTimeRanges, setRateTimeRanges] = useState<RateTimeRange[]>([]);
   const [transferEnableGb, setTransferEnableGb] = useState('');
+  const [transferDirty, setTransferDirty] = useState(false);
   const [code, setCode] = useState('');
   const [groupIds, setGroupIds] = useState<number[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -150,18 +158,15 @@ export function NodeEditorDialog({
       );
       setRateTimeEnable(Boolean(editing.rate_time_enable));
       setRateTimeRanges(editing.rate_time_ranges ?? []);
-      setTransferEnableGb(
-        editing.transfer_enable && editing.transfer_enable > 0
-          ? String(Number((editing.transfer_enable / 1073741824).toFixed(2)))
-          : '',
-      );
+      setTransferEnableGb(bytesToGbInput(editing.transfer_enable));
+      setTransferDirty(false);
       setCode(editing.code ?? '');
-      setGroupIds(editing.group_ids ?? []);
+      setGroupIds(normalizeNumericIds(editing.group_ids));
       setTags(editing.tags ?? []);
       setMachineId(editing.machine_id ?? null);
       setEnabled(editing.enabled !== undefined ? Boolean(editing.enabled) : true);
       setParentId(editing.parent_id ?? null);
-      setRouteIds(editing.route_ids ?? []);
+      setRouteIds(normalizeNumericIds(editing.route_ids));
       setShow(Boolean(editing.show));
       setAdvancedOpen(openAdvancedOnStart);
     } else {
@@ -180,6 +185,7 @@ export function NodeEditorDialog({
       setRateTimeEnable(false);
       setRateTimeRanges([]);
       setTransferEnableGb('');
+      setTransferDirty(false);
       setCode('');
       setGroupIds([]);
       setTags([]);
@@ -276,8 +282,13 @@ export function NodeEditorDialog({
       ps.hy2_settings = hy2;
     }
 
-    const gbNum = parseFloat(transferEnableGb || '0');
-    const transferBytes = Number.isFinite(gbNum) && gbNum > 0 ? Math.round(gbNum * 1073741824) : 0;
+    let transferBytes = 0;
+    if (editing && !transferDirty) {
+      transferBytes = Math.max(0, Math.round(Number(editing.transfer_enable ?? 0)));
+    } else {
+      const gbNum = parseFloat(transferEnableGb || '0');
+      transferBytes = Number.isFinite(gbNum) && gbNum > 0 ? Math.round(gbNum * 1073741824) : 0;
+    }
 
     const payload: Record<string, unknown> = {
       ...(editing ? { id: editing.id } : {}),
@@ -295,12 +306,12 @@ export function NodeEditorDialog({
       custom_routes: customRoutes ?? [],
       transfer_enable: transferBytes,
       code: code.trim() || null,
-      group_ids: groupIds,
+      group_ids: normalizeNumericIds(groupIds),
       tags,
       machine_id: machineId,
       enabled,
       parent_id: parentId,
-      route_ids: routeIds,
+      route_ids: normalizeNumericIds(routeIds),
       show: show ? 1 : 0,
     };
 
@@ -503,10 +514,13 @@ export function NodeEditorDialog({
                         <Input
                           type="number"
                           min={0}
-                          step="1"
+                          step="any"
                           className="h-10 font-mono text-xs"
                           value={transferEnableGb}
-                          onChange={(e) => setTransferEnableGb(e.target.value)}
+                          onChange={(e) => {
+                            setTransferEnableGb(e.target.value);
+                            setTransferDirty(true);
+                          }}
                           placeholder={t('serverNode.unlimitedPlaceholder')}
                         />
                       </div>

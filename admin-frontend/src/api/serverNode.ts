@@ -82,9 +82,28 @@ export interface ServerNodeItem {
   cdn_settings?: CdnSettings | null;
 }
 
+/** Normalize an ID list from legacy string/mixed arrays into deduplicated positive integers. */
+export function normalizeNumericIds(ids: unknown): number[] {
+  if (!Array.isArray(ids)) return [];
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (const raw of ids) {
+    const num = Number(raw);
+    if (Number.isInteger(num) && num > 0 && !seen.has(num)) {
+      seen.add(num);
+      result.push(num);
+    }
+  }
+  return result;
+}
+
 export async function getServerNodes(): Promise<ServerNodeItem[]> {
   const res = await adminApiRequest<ServerNodeItem[]>('/server/manage/getNodes');
-  return res.data || [];
+  return (res.data || []).map((node) => ({
+    ...node,
+    group_ids: normalizeNumericIds(node.group_ids),
+    route_ids: normalizeNumericIds(node.route_ids),
+  }));
 }
 
 export async function saveServerNode(payload: Record<string, unknown>): Promise<boolean> {

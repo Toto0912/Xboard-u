@@ -99,6 +99,7 @@ export default function GiftCardManagePage() {
   const [tplEnabled, setTplEnabled] = useState(true);
   const [rewardBalanceYuan, setRewardBalanceYuan] = useState('');
   const [rewardTrafficGb, setRewardTrafficGb] = useState('');
+  const [rewardTrafficDirty, setRewardTrafficDirty] = useState(false);
   const [rewardExpireDays, setRewardExpireDays] = useState('');
   const [rewardDeviceLimit, setRewardDeviceLimit] = useState('');
   const [rewardResetPkg, setRewardResetPkg] = useState(false);
@@ -286,6 +287,7 @@ export default function GiftCardManagePage() {
     setTplEnabled(true);
     setRewardBalanceYuan('');
     setRewardTrafficGb('');
+    setRewardTrafficDirty(false);
     setRewardExpireDays('');
     setRewardDeviceLimit('');
     setRewardResetPkg(false);
@@ -312,8 +314,14 @@ export default function GiftCardManagePage() {
     const r = tpl.rewards ?? {};
     setRewardBalanceYuan(r.balance ? String(Number(r.balance) / 100) : '');
     setRewardTrafficGb(
-      r.transfer_enable ? String(Number((Number(r.transfer_enable) / 1073741824).toFixed(2))) : '',
+      r.transfer_enable && Number(r.transfer_enable) > 0
+        ? (() => {
+            const gb = Number(r.transfer_enable) / 1073741824;
+            return gb >= 0.01 ? String(Number(gb.toFixed(2))) : String(Number(gb.toFixed(6)));
+          })()
+        : '',
     );
+    setRewardTrafficDirty(false);
     setRewardExpireDays(r.expire_days ? String(r.expire_days) : '');
     setRewardDeviceLimit(r.device_limit ? String(r.device_limit) : '');
     setRewardResetPkg(Boolean(r.reset_package));
@@ -343,7 +351,11 @@ export default function GiftCardManagePage() {
     if (Number(rewardBalanceYuan) > 0) {
       rewards.balance = Math.round(Number(rewardBalanceYuan) * 100);
     }
-    if (Number(rewardTrafficGb) > 0) {
+    if (editingTpl && !rewardTrafficDirty) {
+      if (Number(editingTpl.rewards?.transfer_enable) > 0) {
+        rewards.transfer_enable = Math.round(Number(editingTpl.rewards?.transfer_enable));
+      }
+    } else if (Number(rewardTrafficGb) > 0) {
       rewards.transfer_enable = Math.round(Number(rewardTrafficGb) * 1073741824);
     }
     if (Number(rewardExpireDays) > 0) {
@@ -1085,8 +1097,12 @@ export default function GiftCardManagePage() {
                     <Input
                       type="number"
                       min={0}
+                      step="any"
                       value={rewardTrafficGb}
-                      onChange={(e) => setRewardTrafficGb(e.target.value)}
+                      onChange={(e) => {
+                        setRewardTrafficGb(e.target.value);
+                        setRewardTrafficDirty(true);
+                      }}
                       placeholder="0"
                     />
                   </div>

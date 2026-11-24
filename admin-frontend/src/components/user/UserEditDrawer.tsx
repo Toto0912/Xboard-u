@@ -44,7 +44,8 @@ function toDatetimeLocal(ts: number | null | undefined): string {
 
 function bytesToGbInput(bytes: number | null | undefined): string {
   if (!bytes || bytes <= 0) return '0';
-  return String(Number((bytes / 1073741824).toFixed(2)));
+  const gb = bytes / 1073741824;
+  return gb >= 0.01 ? String(Number(gb.toFixed(2))) : String(Number(gb.toFixed(6)));
 }
 
 export function UserEditDrawer({
@@ -64,6 +65,9 @@ export function UserEditDrawer({
   const [uGb, setUGb] = useState('0');
   const [dGb, setDGb] = useState('0');
   const [transferGb, setTransferGb] = useState('0');
+  const [uDirty, setUDirty] = useState(false);
+  const [dDirty, setDDirty] = useState(false);
+  const [transferDirty, setTransferDirty] = useState(false);
   const [expiredAt, setExpiredAt] = useState('');
   const [planId, setPlanId] = useState('none');
   const [banned, setBanned] = useState('0');
@@ -86,6 +90,9 @@ export function UserEditDrawer({
     setUGb(bytesToGbInput(user.u));
     setDGb(bytesToGbInput(user.d));
     setTransferGb(bytesToGbInput(user.transfer_enable));
+    setUDirty(false);
+    setDDirty(false);
+    setTransferDirty(false);
     setExpiredAt(toDatetimeLocal(user.expired_at));
     setPlanId(user.plan_id ? String(user.plan_id) : 'none');
     setBanned(user.banned ? '1' : '0');
@@ -122,9 +129,6 @@ export function UserEditDrawer({
       invite_user_email: inviteUserEmail.trim() || null,
       balance: Number(balance) || 0,
       commission_balance: Number(commissionBalance) || 0,
-      u: Math.max(0, Math.round((Number(uGb) || 0) * 1073741824)),
-      d: Math.max(0, Math.round((Number(dGb) || 0) * 1073741824)),
-      transfer_enable: Math.max(0, Math.round((Number(transferGb) || 0) * 1073741824)),
       expired_at: expiredAt.trim()
         ? Math.floor(Date.parse(expiredAt) / 1000)
         : null,
@@ -140,6 +144,19 @@ export function UserEditDrawer({
       is_staff: isStaff,
       remarks: remarks.trim() || null,
     };
+
+    if (uDirty) {
+      payload.u = Math.max(0, Math.round((Number(uGb) || 0) * 1073741824));
+    }
+    if (dDirty) {
+      payload.d = Math.max(0, Math.round((Number(dGb) || 0) * 1073741824));
+    }
+    if (transferDirty) {
+      payload.transfer_enable = Math.max(
+        0,
+        Math.round((Number(transferGb) || 0) * 1073741824)
+      );
+    }
 
     if (password.trim()) {
       payload.password = password.trim();
@@ -224,10 +241,13 @@ export function UserEditDrawer({
                   <Input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     className="pr-9 font-mono text-xs"
                     value={uGb}
-                    onChange={(e) => setUGb(e.target.value)}
+                    onChange={(e) => {
+                      setUGb(e.target.value);
+                      setUDirty(true);
+                    }}
                   />
                   <span className="pointer-events-none absolute right-2.5 text-xs text-muted-foreground">
                     GB
@@ -240,10 +260,13 @@ export function UserEditDrawer({
                   <Input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     className="pr-9 font-mono text-xs"
                     value={dGb}
-                    onChange={(e) => setDGb(e.target.value)}
+                    onChange={(e) => {
+                      setDGb(e.target.value);
+                      setDDirty(true);
+                    }}
                   />
                   <span className="pointer-events-none absolute right-2.5 text-xs text-muted-foreground">
                     GB
@@ -258,10 +281,13 @@ export function UserEditDrawer({
                 <Input
                   type="number"
                   min={0}
-                  step="0.01"
+                  step="any"
                   className="pr-9 font-mono text-xs"
                   value={transferGb}
-                  onChange={(e) => setTransferGb(e.target.value)}
+                  onChange={(e) => {
+                    setTransferGb(e.target.value);
+                    setTransferDirty(true);
+                  }}
                 />
                 <span className="pointer-events-none absolute right-2.5 text-xs text-muted-foreground">
                   GB
