@@ -18,9 +18,10 @@
     "all": "全部",
     "saveSuccess": "保存成功",
     "operationSuccess": "操作成功",
-    "lightMode": "牛奶白（浅色）",
-    "darkMode": "深海蓝（深色）",
-    "fullscreen": "全屏切换",
+    "themeLabel": "主题外观",
+    "lightMode": "浅色模式",
+    "darkMode": "深色模式",
+    "systemMode": "跟随系统",
     "unlimited": "不限制",
     "permanent": "永久有效"
   },

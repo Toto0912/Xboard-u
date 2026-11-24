@@ -37,7 +37,7 @@ function getInitialTheme(): ThemeMode {
   } catch {
     // ignore
   }
-  return 'light';
+  return 'system';
 }
 
 interface ThemeState {

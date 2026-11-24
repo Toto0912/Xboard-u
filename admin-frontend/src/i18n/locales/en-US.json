@@ -1059,7 +1059,9 @@
       "download": "Download",
       "rate": "Rate",
       "total": "Total",
-      "empty": "No traffic usage records"
+      "empty": "No traffic usage records",
+      "loadError": "Failed to load traffic usage records",
+      "retry": "Retry"
     },
     "deleteTitle": "Delete User",
     "deleteDesc": "Permanently delete user \"{{email}}\" and their data?",

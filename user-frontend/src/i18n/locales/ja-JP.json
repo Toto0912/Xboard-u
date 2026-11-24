@@ -18,9 +18,10 @@
     "all": "すべて",
     "saveSuccess": "保存しました",
     "operationSuccess": "操作が完了しました",
-    "lightMode": "ミルクホワイト（ライト）",
-    "darkMode": "ディープオーシャン（ダーク）",
-    "fullscreen": "全画面切替",
+    "themeLabel": "外観",
+    "lightMode": "ライトモード",
+    "darkMode": "ダークモード",
+    "systemMode": "システムに合わせる",
     "unlimited": "無制限",
     "permanent": "無期限"
   },

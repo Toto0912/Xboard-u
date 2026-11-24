@@ -1059,7 +1059,9 @@
       "download": "下行",
       "rate": "倍率",
       "total": "总计",
-      "empty": "暂无流量使用记录"
+      "empty": "暂无流量使用记录",
+      "loadError": "加载流量使用记录失败",
+      "retry": "重试"
     },
     "deleteTitle": "删除用户",
     "deleteDesc": "确定要永久删除用户「{{email}}」及其关联数据吗？",

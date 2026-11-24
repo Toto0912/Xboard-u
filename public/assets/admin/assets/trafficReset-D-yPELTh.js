@@ -1,1 +1,0 @@
-import{i as r}from"./index-Dza7UQwT.js";async function i(t){const e=await r("/traffic-reset/logs",{params:t});return{data:e.data||[],pagination:e.pagination||{current_page:1,last_page:1,per_page:20,total:0}}}async function n(t,a){return await r("/traffic-reset/reset-user",{method:"POST",body:{user_id:t,reason:a}}),!0}export{i as f,n as r};

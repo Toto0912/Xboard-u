@@ -18,9 +18,10 @@
     "all": "All",
     "saveSuccess": "Saved successfully",
     "operationSuccess": "Operation successful",
-    "lightMode": "Milk White (Light)",
-    "darkMode": "Deep Ocean (Dark)",
-    "fullscreen": "Toggle Fullscreen",
+    "themeLabel": "Appearance",
+    "lightMode": "Light",
+    "darkMode": "Dark",
+    "systemMode": "System",
     "unlimited": "Unlimited",
     "permanent": "Permanent"
   },

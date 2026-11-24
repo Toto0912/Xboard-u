@@ -18,9 +18,10 @@
     "all": "همه",
     "saveSuccess": "با موفقیت ذخیره شد",
     "operationSuccess": "عملیات موفق بود",
+    "themeLabel": "ظاهر",
     "lightMode": "حالت روشن",
     "darkMode": "حالت تیره",
-    "fullscreen": "تمام صفحه",
+    "systemMode": "پیروی از سیستم",
     "unlimited": "نامحدود",
     "permanent": "دائمی"
   },

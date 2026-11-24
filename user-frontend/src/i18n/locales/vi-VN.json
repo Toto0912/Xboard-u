@@ -18,9 +18,10 @@
     "all": "Tất cả",
     "saveSuccess": "Lưu thành công",
     "operationSuccess": "Thao tác thành công",
-    "lightMode": "Trắng sữa (Sáng)",
-    "darkMode": "Xanh đại dương (Tối)",
-    "fullscreen": "Toàn màn hình",
+    "themeLabel": "Giao diện",
+    "lightMode": "Chế độ sáng",
+    "darkMode": "Chế độ tối",
+    "systemMode": "Theo hệ thống",
     "unlimited": "Không giới hạn",
     "permanent": "Vĩnh viễn"
   },

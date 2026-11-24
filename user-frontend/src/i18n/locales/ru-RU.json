@@ -18,9 +18,10 @@
     "all": "Все",
     "saveSuccess": "Успешно сохранено",
     "operationSuccess": "Операция выполнена",
-    "lightMode": "Молочно-белая (Светлая)",
-    "darkMode": "Глубокий океан (Тёмная)",
-    "fullscreen": "Полный экран",
+    "themeLabel": "Тема",
+    "lightMode": "Светлая",
+    "darkMode": "Тёмная",
+    "systemMode": "Системная",
     "unlimited": "Безлимит",
     "permanent": "Бессрочно"
   },

@@ -179,3 +179,13 @@ export async function fetchUserTrafficStats(params: {
     total: res.total ?? 0,
   };
 }
+
+/** Fetch latest admin user detail by ID for live quota/traffic summary. */
+export async function fetchUserInfoById(id: number): Promise<UserRecord> {
+  const res = await adminApiRequest<UserRecord>('/user/getUserInfoById', {
+    method: 'GET',
+    params: { id },
+    silentError: true,
+  });
+  return res.data;
+}

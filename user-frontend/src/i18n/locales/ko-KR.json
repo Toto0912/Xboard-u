@@ -18,9 +18,10 @@
     "all": "전체",
     "saveSuccess": "저장되었습니다",
     "operationSuccess": "작업이 완료되었습니다",
-    "lightMode": "밀크 화이트 (라이트)",
-    "darkMode": "딥 오션 (다크)",
-    "fullscreen": "전체 화면 전환",
+    "themeLabel": "테마",
+    "lightMode": "라이트 모드",
+    "darkMode": "다크 모드",
+    "systemMode": "시스템 설정",
     "unlimited": "무제한",
     "permanent": "영구"
   },

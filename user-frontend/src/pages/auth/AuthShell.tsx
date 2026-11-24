@@ -1,6 +1,7 @@
-import { Check, Globe, Moon, Sun } from 'lucide-react';
+import { Check, Globe } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ThemeModeDropdown } from '@/components/layout/ThemeModeDropdown';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,7 +12,6 @@ import {
 import { changeLanguage, SUPPORTED_LANGUAGES } from '@/i18n';
 import { getUserSettings } from '@/lib/settings';
 import { cn } from '@/lib/utils';
-import { useThemeStore } from '@/stores/useThemeStore';
 
 export function AuthShell({
   heading,
@@ -22,13 +22,8 @@ export function AuthShell({
   subheading: string;
   children: ReactNode;
 }) {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const { title, description, logo, background_url, version } = getUserSettings();
-  const { mode, toggleLightDark } = useThemeStore();
-
-  const isDark =
-    mode === 'dark' ||
-    (mode === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
 
   return (
     <div
@@ -61,16 +56,7 @@ export function AuthShell({
         </div>
 
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 bg-card/80 backdrop-blur-xs"
-            onClick={toggleLightDark}
-            title={isDark ? t('common.lightMode') : t('common.darkMode')}
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
+          <ThemeModeDropdown variant="outline" className="bg-card/80 backdrop-blur-xs" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

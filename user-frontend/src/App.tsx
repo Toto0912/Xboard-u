@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Suspense, lazy, type ReactNode } from 'react';
+import { useEffect, Suspense, lazy, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { UserLayout } from '@/components/layout/UserLayout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getStoredToken } from '@/lib/storage';
-import { useThemeStore } from '@/stores/useThemeStore';
+import { applyTheme, useThemeStore } from '@/stores/useThemeStore';
 
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'));
@@ -53,17 +53,28 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function ThemeSync() {
+  const mode = useThemeStore((s) => s.mode);
+
+  useEffect(() => {
+    applyTheme(mode);
+    if (mode !== 'system' || !window.matchMedia) return;
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyTheme('system');
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, [mode]);
+
+  return null;
+}
+
 export default function App() {
   const mode = useThemeStore((s) => s.mode);
-  const resolvedTheme =
-    mode === 'system'
-      ? window.matchMedia?.('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : mode;
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeSync />
       <HashRouter>
         <Suspense fallback={<PageLoader />}>
           <Routes>
@@ -102,7 +113,7 @@ export default function App() {
       <Toaster
         position="top-center"
         richColors
-        theme={resolvedTheme}
+        theme={mode}
         duration={2500}
         offset={{ top: 12 }}
       />

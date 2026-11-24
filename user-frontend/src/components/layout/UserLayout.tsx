@@ -8,24 +8,21 @@ import {
   Globe,
   LayoutDashboard,
   LogOut,
-  Maximize2,
   Menu,
   MessageSquare,
-  Minimize2,
-  Moon,
   Network,
   PanelLeftClose,
   PanelLeftOpen,
   ShoppingBag,
-  Sun,
   User,
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { fetchUserInfo } from '@/api/user';
+import { ThemeModeDropdown } from '@/components/layout/ThemeModeDropdown';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -38,7 +35,6 @@ import { changeLanguage, SUPPORTED_LANGUAGES } from '@/i18n';
 import { getUserSettings } from '@/lib/settings';
 import { removeStoredToken } from '@/lib/storage';
 import { cn } from '@/lib/utils';
-import { useThemeStore } from '@/stores/useThemeStore';
 import { useUiStore } from '@/stores/useUiStore';
 
 interface NavGroup {
@@ -99,9 +95,7 @@ export function UserLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { title, logo } = getUserSettings();
-  const { mode, toggleLightDark } = useThemeStore();
   const { sidebarCollapsed, mobileMenuOpen, toggleSidebar, setMobileMenuOpen } = useUiStore();
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const userQuery = useQuery({
     queryKey: ['user-info'],
@@ -117,29 +111,11 @@ export function UserLayout() {
     document.title = `${t(titleKey)} | ${title}`;
   }, [location.pathname, t, title]);
 
-  useEffect(() => {
-    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
-
-  const handleToggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      void document.documentElement.requestFullscreen?.().catch(() => {});
-    } else {
-      void document.exitFullscreen?.().catch(() => {});
-    }
-  };
-
   const handleLogout = () => {
     removeStoredToken();
     queryClient.clear();
     navigate('/login', { replace: true });
   };
-
-  const isDark =
-    mode === 'dark' ||
-    (mode === 'system' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
 
   const renderNav = (collapsed = false) => (
     <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
@@ -278,16 +254,7 @@ export function UserLayout() {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={toggleLightDark}
-              title={isDark ? t('common.lightMode') : t('common.darkMode')}
-            >
-              {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
+            <ThemeModeDropdown />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -311,17 +278,6 @@ export function UserLayout() {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="hidden h-8 w-8 sm:inline-flex"
-              onClick={handleToggleFullscreen}
-              title={t('common.fullscreen')}
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, RefreshCw } from 'lucide-react';
+import { Activity, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { fetchUserTrafficStats, type UserRecord } from '@/api/user';
+import { fetchUserInfoById, fetchUserTrafficStats, type UserRecord } from '@/api/user';
 import { DataTablePagination } from '@/components/shared/DataTablePagination';
 import { Button } from '@/components/ui/button';
 import {
@@ -61,13 +61,23 @@ export function UserTrafficLogsDialog({
     enabled: open && Boolean(user?.id),
   });
 
+  const userInfoQuery = useQuery({
+    queryKey: ['admin-user-info', user?.id],
+    queryFn: () => fetchUserInfoById(user!.id),
+    enabled: open && Boolean(user?.id),
+  });
+
   const records = statsQuery.data?.data ?? [];
   const total = statsQuery.data?.total ?? 0;
+  const currentUser = userInfoQuery.data ?? user;
+  const isRefreshing = statsQuery.isFetching || userInfoQuery.isFetching;
 
-  const uploadBytes = Number(user?.u ?? 0);
-  const downloadBytes = Number(user?.d ?? 0);
+  const handleRefresh = () => Promise.all([statsQuery.refetch(), userInfoQuery.refetch()]);
+
+  const uploadBytes = Number(currentUser?.u ?? 0);
+  const downloadBytes = Number(currentUser?.d ?? 0);
   const usedBytes = uploadBytes + downloadBytes;
-  const totalBytes = Number(user?.transfer_enable ?? 0);
+  const totalBytes = Number(currentUser?.transfer_enable ?? 0);
   const trafficTone = getTrafficUsageTone(usedBytes, totalBytes);
 
   return (
@@ -77,9 +87,12 @@ export function UserTrafficLogsDialog({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <DialogTitle>{t('userManage.trafficLogs.title')}</DialogTitle>
-              {user && (
+              {currentUser && (
                 <DialogDescription className="truncate font-mono text-xs">
-                  {t('userManage.trafficLogs.subtitle', { id: user.id, email: user.email })}
+                  {t('userManage.trafficLogs.subtitle', {
+                    id: currentUser.id,
+                    email: currentUser.email,
+                  })}
                 </DialogDescription>
               )}
             </div>
@@ -88,19 +101,17 @@ export function UserTrafficLogsDialog({
               variant="outline"
               size="sm"
               className="h-8 shrink-0 gap-1.5"
-              onClick={() => void statsQuery.refetch()}
-              disabled={statsQuery.isFetching}
+              onClick={() => void handleRefresh()}
+              disabled={isRefreshing}
             >
-              <RefreshCw
-                className={cn('h-3.5 w-3.5', statsQuery.isFetching && 'animate-spin')}
-              />
+              <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
               {t('common.refresh')}
             </Button>
           </div>
         </DialogHeader>
 
-        {user && (
-          <div className="grid grid-cols-3 gap-2.5">
+        {currentUser && (
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             <div className="rounded-lg border bg-muted/20 px-3 py-2">
               <div className="text-[11px] text-muted-foreground">
                 {t('userManage.trafficLogs.currentUpload')}
@@ -132,12 +143,28 @@ export function UserTrafficLogsDialog({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto rounded-lg border">
+        <div className="flex-1 overflow-auto rounded-lg border">
           {statsQuery.isLoading ? (
             <div className="space-y-2 p-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
+            </div>
+          ) : statsQuery.isError ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-14 text-sm text-muted-foreground">
+              <AlertTriangle className="h-8 w-8 text-destructive/70" />
+              <span>{t('userManage.trafficLogs.loadError')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => void handleRefresh()}
+                disabled={isRefreshing}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+                {t('userManage.trafficLogs.retry')}
+              </Button>
             </div>
           ) : records.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
@@ -145,22 +172,22 @@ export function UserTrafficLogsDialog({
               <span>{t('userManage.trafficLogs.empty')}</span>
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[440px] text-sm">
               <thead className="sticky top-0 border-b bg-muted/60 text-left text-xs text-muted-foreground backdrop-blur-sm">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">
+                  <th className="whitespace-nowrap px-4 py-2.5 font-medium">
                     {t('userManage.trafficLogs.recordDate')}
                   </th>
-                  <th className="px-4 py-2.5 font-medium">
+                  <th className="whitespace-nowrap px-4 py-2.5 font-medium">
                     {t('userManage.trafficLogs.upload')}
                   </th>
-                  <th className="px-4 py-2.5 font-medium">
+                  <th className="whitespace-nowrap px-4 py-2.5 font-medium">
                     {t('userManage.trafficLogs.download')}
                   </th>
-                  <th className="px-4 py-2.5 font-medium">
+                  <th className="whitespace-nowrap px-4 py-2.5 font-medium">
                     {t('userManage.trafficLogs.rate')}
                   </th>
-                  <th className="px-4 py-2.5 text-right font-medium">
+                  <th className="whitespace-nowrap px-4 py-2.5 text-right font-medium">
                     {t('userManage.trafficLogs.total')}
                   </th>
                 </tr>
@@ -172,19 +199,19 @@ export function UserTrafficLogsDialog({
                   const rowTotal = rowUpload + rowDownload;
                   return (
                     <tr key={row.id} className="hover:bg-muted/30">
-                      <td className="px-4 py-2.5 font-mono text-xs">
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
                         {formatRecordDate(row.record_at, row.record_type)}
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs">
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
                         {formatBytes(rowUpload)}
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs">
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
                         {formatBytes(rowDownload)}
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs">
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs">
                         {Number(row.server_rate ?? 1)}x
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-xs font-medium">
+                      <td className="whitespace-nowrap px-4 py-2.5 text-right font-mono text-xs font-medium">
                         {formatBytes(rowTotal)}
                       </td>
                     </tr>
