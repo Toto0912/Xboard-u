@@ -377,7 +377,7 @@ export function DateRangePicker({
           variant={variant}
           size="sm"
           className={cn(
-            'h-8 shrink-0 justify-start whitespace-nowrap px-2.5 text-left font-mono text-xs font-normal',
+            'h-8 min-w-0 justify-start whitespace-nowrap px-2.5 text-left font-mono text-xs font-normal',
             className,
           )}
         >

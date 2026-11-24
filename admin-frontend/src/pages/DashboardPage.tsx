@@ -132,7 +132,7 @@ function GrowthPill({ value }: { value: number }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 text-xs font-medium tabular-nums',
+        'inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap text-xs font-medium tabular-nums',
         positive && 'text-emerald-600 dark:text-emerald-400',
         negative && 'text-rose-600 dark:text-rose-400',
         !positive && !negative && 'text-muted-foreground',
@@ -172,15 +172,15 @@ function TrafficRankCard({
   const maxValue = items.reduce((max, item) => Math.max(max, Number(item.value || 0)), 0);
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="space-y-0 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <CardTitle className="whitespace-nowrap text-base font-medium">{title}</CardTitle>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <div className="inline-flex h-8 items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
+          <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
+            <div className="inline-flex h-8 min-w-0 max-w-full items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
               <Select
                 value={range}
                 onValueChange={(v) => {
@@ -193,7 +193,7 @@ function TrafficRankCard({
                   }
                 }}
               >
-                <SelectTrigger className="h-8 w-auto min-w-[92px] gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
+                <SelectTrigger className="h-8 w-auto min-w-[78px] shrink-0 gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -213,7 +213,7 @@ function TrafficRankCard({
                     onOpenChange={setCustomPickerOpen}
                     value={customRange}
                     onChange={setCustomRange}
-                    className="h-7 rounded-l-none px-2 hover:bg-accent/50"
+                    className="h-7 min-w-0 shrink rounded-l-none px-1.5 text-[11px] hover:bg-accent/50 sm:px-2 sm:text-xs"
                   />
                 </>
               )}
@@ -234,7 +234,7 @@ function TrafficRankCard({
             {t('dashboard.noRankData')}
           </div>
         ) : (
-          <div className="h-[400px] space-y-2.5 overflow-y-auto pr-2">
+          <div className="h-[400px] space-y-2.5 overflow-x-hidden overflow-y-auto pr-2">
             {items.map((item) => {
               const val = Number(item.value || 0);
               const pct =
@@ -242,10 +242,10 @@ function TrafficRankCard({
               return (
                 <div
                   key={item.id}
-                  className="space-y-2 rounded-lg border bg-muted/30 px-4 py-3"
+                  className="min-w-0 space-y-2 rounded-lg border bg-muted/30 px-4 py-3"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium">{item.name}</span>
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{item.name}</span>
                     <GrowthPill value={item.change} />
                   </div>
                   <div className="flex items-center gap-3">
@@ -341,7 +341,7 @@ export default function DashboardPage() {
   const isMonetaryMetric = orderMetric === 'paid_total' || orderMetric === 'commission_total';
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{t('nav.dashboard')}</h1>
@@ -384,7 +384,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Primary KPI Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -494,7 +494,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Pending & Traffic Summary Row */}
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.pendingActions')}</CardTitle>
@@ -548,7 +548,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Traffic Ranking (Side-by-Side) */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TrafficRankCard
           type="node"
           title={t('dashboard.nodeTrafficRank')}
@@ -568,8 +568,8 @@ export default function DashboardPage() {
               <CardTitle className="text-base">{t('dashboard.orderTrend')}</CardTitle>
               <CardDescription>{t('dashboard.orderTrendDesc')}</CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex h-8 items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+              <div className="inline-flex h-8 min-w-0 max-w-full items-center rounded-md border border-input bg-[var(--input-bg)] shadow-xs transition-all">
                 <Select
                   value={datePreset}
                   onValueChange={(v) => {
@@ -582,7 +582,7 @@ export default function DashboardPage() {
                     }
                   }}
                 >
-                  <SelectTrigger className="h-8 w-auto min-w-[92px] gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
+                  <SelectTrigger className="h-8 w-auto min-w-[78px] shrink-0 gap-1.5 border-0 bg-transparent px-2.5 text-xs shadow-none focus:ring-0">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -601,7 +601,7 @@ export default function DashboardPage() {
                       onOpenChange={setOrderPickerOpen}
                       value={customOrderRange}
                       onChange={setCustomOrderRange}
-                      className="h-7 rounded-l-none px-2 hover:bg-accent/50"
+                      className="h-7 min-w-0 shrink rounded-l-none px-1.5 text-[11px] hover:bg-accent/50 sm:px-2 sm:text-xs"
                     />
                   </>
                 )}
