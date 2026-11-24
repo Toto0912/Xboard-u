@@ -151,3 +151,31 @@ export async function destroyUser(id: number): Promise<boolean> {
   });
   return Boolean(res.data);
 }
+
+export interface UserTrafficStatItem {
+  id: number;
+  user_id: number;
+  u: number;
+  d: number;
+  server_rate: number | string;
+  record_type: string;
+  record_at: number;
+  created_at?: number;
+  updated_at?: number;
+}
+
+/** Fetch paginated per-user daily/monthly traffic usage logs from admin stat endpoint. */
+export async function fetchUserTrafficStats(params: {
+  user_id: number;
+  page: number;
+  pageSize: number;
+}): Promise<{ data: UserTrafficStatItem[]; total: number }> {
+  const res = await adminApiRequest<UserTrafficStatItem[]>('/stat/getStatUser', {
+    method: 'GET',
+    params,
+  });
+  return {
+    data: Array.isArray(res.data) ? res.data : [],
+    total: res.total ?? 0,
+  };
+}

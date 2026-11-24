@@ -1,0 +1,211 @@
+import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Activity, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { fetchUserTrafficStats, type UserRecord } from '@/api/user';
+import { DataTablePagination } from '@/components/shared/DataTablePagination';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatBytes, getTrafficUsageTone } from '@/lib/format';
+import { cn } from '@/lib/utils';
+
+interface UserTrafficLogsDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  user: UserRecord | null;
+}
+
+function formatRecordDate(ts: number, recordType?: string): string {
+  const num = Number(ts);
+  if (!Number.isFinite(num) || num <= 0) return '—';
+  const d = new Date(num > 1e12 ? num : num * 1000);
+  if (Number.isNaN(d.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  if (recordType === 'm') {
+    return `${year}-${month}`;
+  }
+  return `${year}-${month}-${pad(d.getDate())}`;
+}
+
+/** Modal displaying a user's current traffic summary and paginated daily/monthly usage records. */
+export function UserTrafficLogsDialog({
+  open,
+  onOpenChange,
+  user,
+}: UserTrafficLogsDialogProps) {
+  const { t } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setPage(1);
+  }, [user?.id, open]);
+
+  const statsQuery = useQuery({
+    queryKey: ['admin-user-traffic-stats', user?.id, page, pageSize],
+    queryFn: () =>
+      fetchUserTrafficStats({
+        user_id: user!.id,
+        page,
+        pageSize,
+      }),
+    enabled: open && Boolean(user?.id),
+  });
+
+  const records = statsQuery.data?.data ?? [];
+  const total = statsQuery.data?.total ?? 0;
+
+  const uploadBytes = Number(user?.u ?? 0);
+  const downloadBytes = Number(user?.d ?? 0);
+  const usedBytes = uploadBytes + downloadBytes;
+  const totalBytes = Number(user?.transfer_enable ?? 0);
+  const trafficTone = getTrafficUsageTone(usedBytes, totalBytes);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-4 overflow-hidden">
+        <DialogHeader className="pr-8">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <DialogTitle>{t('userManage.trafficLogs.title')}</DialogTitle>
+              {user && (
+                <DialogDescription className="truncate font-mono text-xs">
+                  {t('userManage.trafficLogs.subtitle', { id: user.id, email: user.email })}
+                </DialogDescription>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0 gap-1.5"
+              onClick={() => void statsQuery.refetch()}
+              disabled={statsQuery.isFetching}
+            >
+              <RefreshCw
+                className={cn('h-3.5 w-3.5', statsQuery.isFetching && 'animate-spin')}
+              />
+              {t('common.refresh')}
+            </Button>
+          </div>
+        </DialogHeader>
+
+        {user && (
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <div className="text-[11px] text-muted-foreground">
+                {t('userManage.trafficLogs.currentUpload')}
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold">
+                {formatBytes(uploadBytes)}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <div className="text-[11px] text-muted-foreground">
+                {t('userManage.trafficLogs.currentDownload')}
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold">
+                {formatBytes(downloadBytes)}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <div className="text-[11px] text-muted-foreground">
+                {t('userManage.trafficLogs.currentQuota')}
+              </div>
+              <div className="mt-0.5 font-mono text-sm font-semibold">
+                <span className={trafficTone.textClass}>{formatBytes(usedBytes)}</span>
+                <span className="text-muted-foreground">
+                  {' '}
+                  / {totalBytes > 0 ? formatBytes(totalBytes) : '∞'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto rounded-lg border">
+          {statsQuery.isLoading ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : records.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
+              <Activity className="h-8 w-8 opacity-40" />
+              <span>{t('userManage.trafficLogs.empty')}</span>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 border-b bg-muted/60 text-left text-xs text-muted-foreground backdrop-blur-sm">
+                <tr>
+                  <th className="px-4 py-2.5 font-medium">
+                    {t('userManage.trafficLogs.recordDate')}
+                  </th>
+                  <th className="px-4 py-2.5 font-medium">
+                    {t('userManage.trafficLogs.upload')}
+                  </th>
+                  <th className="px-4 py-2.5 font-medium">
+                    {t('userManage.trafficLogs.download')}
+                  </th>
+                  <th className="px-4 py-2.5 font-medium">
+                    {t('userManage.trafficLogs.rate')}
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">
+                    {t('userManage.trafficLogs.total')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {records.map((row) => {
+                  const rowUpload = Number(row.u ?? 0);
+                  const rowDownload = Number(row.d ?? 0);
+                  const rowTotal = rowUpload + rowDownload;
+                  return (
+                    <tr key={row.id} className="hover:bg-muted/30">
+                      <td className="px-4 py-2.5 font-mono text-xs">
+                        {formatRecordDate(row.record_at, row.record_type)}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs">
+                        {formatBytes(rowUpload)}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs">
+                        {formatBytes(rowDownload)}
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-xs">
+                        {Number(row.server_rate ?? 1)}x
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-xs font-medium">
+                        {formatBytes(rowTotal)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {total > 0 && (
+          <DataTablePagination
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 50]}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

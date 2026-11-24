@@ -73,6 +73,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { UserEditDrawer } from '@/components/user/UserEditDrawer';
+import { UserTrafficLogsDialog } from '@/components/user/UserTrafficLogsDialog';
 import { formatBytes, formatTimestamp, getTrafficUsageTone } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -122,6 +123,7 @@ export default function UserManagePage() {
   const [resetSecretTarget, setResetSecretTarget] = useState<UserRecord | null>(null);
   const [resetTrafficTarget, setResetTrafficTarget] = useState<UserRecord | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<UserRecord | null>(null);
+  const [trafficLogsUser, setTrafficLogsUser] = useState<UserRecord | null>(null);
 
   const activeFilters = useMemo<UserFilterItem[]>(() => {
     const arr: UserFilterItem[] = [];
@@ -685,15 +687,7 @@ export default function UserManagePage() {
                               <Users className="mr-2 h-4 w-4" />
                               {t('userManage.userInvites')}
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                navigate(
-                                  `/user/traffic-reset-logs?user_email=${encodeURIComponent(
-                                    u.email,
-                                  )}`,
-                                )
-                              }
-                            >
+                            <DropdownMenuItem onClick={() => setTrafficLogsUser(u)}>
                               <Activity className="mr-2 h-4 w-4" />
                               {t('userManage.userTrafficLogs')}
                             </DropdownMenuItem>
@@ -737,6 +731,12 @@ export default function UserManagePage() {
         onOpenChange={(o) => !o && setEditingUser(null)}
         user={editingUser}
         plans={plansQuery.data ?? []}
+      />
+
+      <UserTrafficLogsDialog
+        open={Boolean(trafficLogsUser)}
+        onOpenChange={(o) => !o && setTrafficLogsUser(null)}
+        user={trafficLogsUser}
       />
 
       {/* Create / Generate User Dialog */}
