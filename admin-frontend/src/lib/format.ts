@@ -32,3 +32,50 @@ export function formatPercent(value: number | null | undefined): string {
   const prefix = num > 0 ? '+' : '';
   return `${prefix}${num.toFixed(1)}%`;
 }
+
+export interface TrafficUsageTone {
+  level: 'normal' | 'warning' | 'danger';
+  pct: number;
+  barClass: string;
+  textClass: string;
+}
+
+/** Return progress percentage and warning/danger classes based on traffic usage thresholds (80% / 90%). */
+export function getTrafficUsageTone(usedBytes: number, totalBytes: number): TrafficUsageTone {
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0 || !Number.isFinite(usedBytes) || usedBytes <= 0) {
+    return {
+      level: 'normal',
+      pct: 0,
+      barClass: 'bg-primary',
+      textClass: '',
+    };
+  }
+
+  const rawPct = (usedBytes / totalBytes) * 100;
+  const pct = Math.min(100, Math.max(0, rawPct));
+
+  if (rawPct >= 90) {
+    return {
+      level: 'danger',
+      pct,
+      barClass: 'bg-rose-500',
+      textClass: 'text-rose-600 dark:text-rose-400 font-medium',
+    };
+  }
+
+  if (rawPct >= 80) {
+    return {
+      level: 'warning',
+      pct,
+      barClass: 'bg-amber-500',
+      textClass: 'text-amber-600 dark:text-amber-400 font-medium',
+    };
+  }
+
+  return {
+    level: 'normal',
+    pct,
+    barClass: 'bg-primary',
+    textClass: '',
+  };
+}

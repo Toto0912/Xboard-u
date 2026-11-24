@@ -29,8 +29,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatBytes, formatDate } from '@/lib/format';
+import { formatBytes, formatDate, getTrafficUsageTone } from '@/lib/format';
 import { getUserSettings } from '@/lib/settings';
+import { cn } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { t } = useTranslation();
@@ -62,7 +63,8 @@ export default function DashboardPage() {
   const totalBytes = Number(sub?.transfer_enable ?? 0);
   const usedBytes = Number(sub?.u ?? 0) + Number(sub?.d ?? 0);
   const remainingBytes = Math.max(0, totalBytes - usedBytes);
-  const usedPct = totalBytes > 0 ? Math.min(100, (usedBytes / totalBytes) * 100) : 0;
+  const trafficTone = getTrafficUsageTone(usedBytes, totalBytes);
+  const usedPct = trafficTone.pct;
 
   const hasPlan = Boolean(sub?.plan_id && sub?.plan);
 
@@ -203,16 +205,18 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">
                       {t('dashboard.usedTraffic')}:{' '}
-                      <strong className="font-mono text-foreground">{formatBytes(usedBytes)}</strong>
+                      <strong className={cn('font-mono text-foreground', trafficTone.textClass)}>
+                        {formatBytes(usedBytes)}
+                      </strong>
                     </span>
                     <span className="font-mono text-muted-foreground">
-                      {usedPct.toFixed(1)}% · {t('dashboard.totalTraffic')}:{' '}
-                      {formatBytes(totalBytes)}
+                      <span className={trafficTone.textClass}>{usedPct.toFixed(1)}%</span> ·{' '}
+                      {t('dashboard.totalTraffic')}: {formatBytes(totalBytes)}
                     </span>
                   </div>
                   <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      className={cn('h-full rounded-full transition-all duration-300', trafficTone.barClass)}
                       style={{ width: `${usedPct}%` }}
                     />
                   </div>
@@ -221,7 +225,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 gap-2.5 text-xs">
                   <div className="rounded-lg border bg-muted/20 p-2.5">
                     <div className="text-muted-foreground">{t('dashboard.remainingTraffic')}</div>
-                    <div className="mt-1 font-mono text-sm font-semibold">
+                    <div className={cn('mt-1 font-mono text-sm font-semibold', trafficTone.textClass)}>
                       {formatBytes(remainingBytes)}
                     </div>
                   </div>

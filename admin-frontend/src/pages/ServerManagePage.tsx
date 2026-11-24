@@ -69,8 +69,9 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, getTrafficUsageTone } from '@/lib/format';
 import { PROTOCOL_LIST, PROTOCOL_MAP } from '@/lib/serverPresets';
+import { cn } from '@/lib/utils';
 
 type SortKey = 'default' | 'id' | 'online';
 
@@ -551,8 +552,8 @@ export default function ServerManagePage() {
                 const meta = PROTOCOL_MAP[node.type];
                 const usedBytes = Number(node.u ?? 0) + Number(node.d ?? 0);
                 const limitBytes = Number(node.transfer_enable ?? 0);
-                const pct =
-                  limitBytes > 0 ? Math.min(100, Math.round((usedBytes / limitBytes) * 100)) : 0;
+                const trafficTone = getTrafficUsageTone(usedBytes, limitBytes);
+                const pct = Math.round(trafficTone.pct);
                 const { className: dragRowClass, ...rowDragProps } = dragSort.getRowProps(idx);
                 return (
                   <tr
@@ -587,11 +588,16 @@ export default function ServerManagePage() {
                       </div>
                     </td>
                     <td className="px-3 py-3 text-xs">
-                      <div className="font-mono">{formatBytes(usedBytes)}</div>
+                      <div className={cn('font-mono', trafficTone.textClass)}>
+                        {formatBytes(usedBytes)}
+                      </div>
                       {limitBytes > 0 && (
                         <div className="mt-1 w-24 space-y-0.5">
                           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                            <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                            <div
+                              className={cn('h-full transition-colors', trafficTone.barClass)}
+                              style={{ width: `${pct}%` }}
+                            />
                           </div>
                           <div className="text-[10px] text-muted-foreground">
                             / {formatBytes(limitBytes)}
@@ -674,8 +680,8 @@ export default function ServerManagePage() {
                   const meta = PROTOCOL_MAP[node.type];
                   const usedBytes = Number(node.u ?? 0) + Number(node.d ?? 0);
                   const limitBytes = Number(node.transfer_enable ?? 0);
-                  const pct =
-                    limitBytes > 0 ? Math.min(100, Math.round((usedBytes / limitBytes) * 100)) : 0;
+                  const trafficTone = getTrafficUsageTone(usedBytes, limitBytes);
+                  const pct = Math.round(trafficTone.pct);
                   const avail = node.available_status ?? 0;
                   const displayServerPort = node.cdn_settings?.enabled
                     ? node.cdn_settings.server?.server_port ?? ''
@@ -788,11 +794,16 @@ export default function ServerManagePage() {
                         </div>
                       </td>
                       <td className="px-3 py-3 text-xs">
-                        <div className="font-mono">{formatBytes(usedBytes)}</div>
+                        <div className={cn('font-mono', trafficTone.textClass)}>
+                          {formatBytes(usedBytes)}
+                        </div>
                         {limitBytes > 0 && (
                           <div className="mt-1 w-24 space-y-0.5">
                             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                              <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                              <div
+                                className={cn('h-full transition-colors', trafficTone.barClass)}
+                                style={{ width: `${pct}%` }}
+                              />
                             </div>
                             <div className="text-[10px] text-muted-foreground">
                               / {formatBytes(limitBytes)}

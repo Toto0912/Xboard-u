@@ -73,7 +73,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { UserEditDrawer } from '@/components/user/UserEditDrawer';
-import { formatBytes, formatTimestamp } from '@/lib/format';
+import { formatBytes, formatTimestamp, getTrafficUsageTone } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface AdvancedFilterRow {
   field: string;
@@ -568,8 +569,8 @@ export default function UserManagePage() {
                 users.map((u) => {
                   const usedBytes = Number(u.u ?? 0) + Number(u.d ?? 0);
                   const totalBytes = Number(u.transfer_enable ?? 0);
-                  const pct =
-                    totalBytes > 0 ? Math.min(100, Math.round((usedBytes / totalBytes) * 100)) : 0;
+                  const trafficTone = getTrafficUsageTone(usedBytes, totalBytes);
+                  const pct = Math.round(trafficTone.pct);
 
                   return (
                     <tr key={u.id} className="hover:bg-muted/30">
@@ -617,10 +618,15 @@ export default function UserManagePage() {
                       <td className="px-3 py-3 text-xs">{u.plan?.name || '—'}</td>
                       <td className="px-3 py-3 text-xs">{u.group?.name || '—'}</td>
                       <td className="px-3 py-3 text-xs">
-                        <div className="font-mono">{formatBytes(usedBytes)}</div>
+                        <div className={cn('font-mono', trafficTone.textClass)}>
+                          {formatBytes(usedBytes)}
+                        </div>
                         {totalBytes > 0 && (
                           <div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-                            <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                            <div
+                              className={cn('h-full transition-colors', trafficTone.barClass)}
+                              style={{ width: `${pct}%` }}
+                            />
                           </div>
                         )}
                       </td>
