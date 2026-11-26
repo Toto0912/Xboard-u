@@ -129,37 +129,35 @@ function getRankTimestamps(
   return { start_time: end - days * 86400, end_time: end };
 }
 
-const QUEUE_POOL_SIGNATURES: Array<{ tokens: string[]; key: string }> = [
-  { tokens: ['default', 'order_handle'], key: 'business' },
-  { tokens: ['node_sync', 'send_email', 'send_email_mass', 'send_telegram'], key: 'notification' },
-  { tokens: ['stat', 'traffic_fetch', 'user_alive_sync'], key: 'data_pipeline' },
-  {
-    tokens: [
-      'default',
-      'node_sync',
-      'order_handle',
-      'send_email',
-      'send_email_mass',
-      'send_telegram',
-      'stat',
-      'traffic_fetch',
-      'user_alive_sync',
-    ],
-    key: 'all',
-  },
-];
+const businessQueues = ['default', 'order_handle'];
+const notificationQueues = ['node_sync', 'send_email', 'send_email_mass', 'send_telegram'];
+const legacyTrafficQueues = ['traffic_fetch', 'stat', 'user_alive_sync'];
+const trafficQueues = [...legacyTrafficQueues, 'traffic_batch'];
+const sharedQueues = [...businessQueues, ...notificationQueues];
+
+function queuePoolKey(queues: string[]) {
+  return [...new Set(queues)].sort().join(',');
+}
+
+const queuePoolNames = new Map([
+  [queuePoolKey(businessQueues), 'business'],
+  [queuePoolKey(notificationQueues), 'notification'],
+  [queuePoolKey(legacyTrafficQueues), 'data_pipeline'],
+  [queuePoolKey(trafficQueues), 'data_pipeline'],
+  [queuePoolKey([...sharedQueues, ...legacyTrafficQueues]), 'all'],
+  [queuePoolKey([...sharedQueues, ...trafficQueues]), 'all'],
+]);
 
 function getQueueMeta(rawName: string, t: TFunction) {
   const tokens = rawName
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const sortedKey = [...new Set(tokens)].sort().join(',');
-  const matchedPool = QUEUE_POOL_SIGNATURES.find((p) => p.tokens.join(',') === sortedKey);
+  const matchedPool = queuePoolNames.get(queuePoolKey(tokens));
 
   let title = rawName;
   if (matchedPool) {
-    title = t(`dashboard.queuePools.${matchedPool.key}`);
+    title = t(`dashboard.queuePools.${matchedPool}`);
   } else if (tokens.length === 1) {
     const single = t(`dashboard.queueItems.${tokens[0]}`, { defaultValue: '' });
     if (single) title = single;

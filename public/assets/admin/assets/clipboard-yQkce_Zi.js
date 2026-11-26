@@ -1,0 +1,1 @@
+import{t,O as o}from"./index-BNp8cHBT.js";async function c(r){try{return await navigator.clipboard.writeText(r),t.success(o.t("common.copied")),!0}catch{return t.error(o.t("common.copyFailed")),!1}}export{c};

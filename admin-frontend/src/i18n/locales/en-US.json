@@ -244,6 +244,7 @@
       "send_email": "Instant emails (verification codes, password reset)",
       "send_email_mass": "Bulk campaign / reminder emails (isolated)",
       "traffic_fetch": "Async ingestion of node-reported user traffic",
+      "traffic_batch": "Process batched node traffic reports to update user usage and traffic statistics",
       "stat": "Per-node & per-user traffic stat aggregation",
       "user_alive_sync": "Online user device / IP heartbeat snapshot sync"
     }
