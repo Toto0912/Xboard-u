@@ -125,9 +125,6 @@
     "copySubUrl": "購読URLをコピー",
     "scanQrCode": "QRコードをスキャン",
     "qrModalDesc": "対応クライアントで下のQRコードをスキャンしてください",
-    "selectProtocol": "プロトコル",
-    "protocolAuto": "自動",
-    "protocolAll": "すべて",
     "importTo": "{{client}} にインポート",
     "viewDocsBtn": "使い方がわからない場合はドキュメントを見る"
   },

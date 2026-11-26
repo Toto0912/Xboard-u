@@ -125,9 +125,6 @@
     "copySubUrl": "复制订阅地址",
     "scanQrCode": "扫描二维码订阅",
     "qrModalDesc": "使用支持扫码的客户端扫描下方二维码导入订阅",
-    "selectProtocol": "选择协议",
-    "protocolAuto": "自动",
-    "protocolAll": "全部",
     "importTo": "导入到 {{client}}",
     "viewDocsBtn": "不会使用？查看使用教程"
   },

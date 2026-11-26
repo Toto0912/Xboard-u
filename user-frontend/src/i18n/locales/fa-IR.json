@@ -125,9 +125,6 @@
     "copySubUrl": "کپی لینک اشتراک",
     "scanQrCode": "اسکن کد QR",
     "qrModalDesc": "کد زیر را با کلاینت سازگار اسکن کنید",
-    "selectProtocol": "پروتکل",
-    "protocolAuto": "خودکار",
-    "protocolAll": "همه",
     "importTo": "افزودن به {{client}}",
     "viewDocsBtn": "نیاز به راهنما دارید؟ مشاهده آموزش"
   },

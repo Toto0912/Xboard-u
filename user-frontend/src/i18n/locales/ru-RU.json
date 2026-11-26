@@ -125,9 +125,6 @@
     "copySubUrl": "Копировать ссылку",
     "scanQrCode": "Сканировать QR-код",
     "qrModalDesc": "Отсканируйте QR-код совместимым клиентом",
-    "selectProtocol": "Протокол",
-    "protocolAuto": "Авто",
-    "protocolAll": "Все",
     "importTo": "Импорт в {{client}}",
     "viewDocsBtn": "Нужна помощь? Открыть инструкции"
   },

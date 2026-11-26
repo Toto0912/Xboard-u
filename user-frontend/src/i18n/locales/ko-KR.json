@@ -125,9 +125,6 @@
     "copySubUrl": "구독 URL 복사",
     "scanQrCode": "QR 코드 스캔",
     "qrModalDesc": "지원되는 클라이언트로 아래 QR 코드를 스캔하세요",
-    "selectProtocol": "프로토콜",
-    "protocolAuto": "자동",
-    "protocolAll": "전체",
     "importTo": "{{client}}로 가져오기",
     "viewDocsBtn": "사용법을 모르시나요? 가이드 보기"
   },

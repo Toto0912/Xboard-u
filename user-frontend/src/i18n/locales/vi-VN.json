@@ -125,9 +125,6 @@
     "copySubUrl": "Sao chép liên kết",
     "scanQrCode": "Quét mã QR",
     "qrModalDesc": "Quét mã QR bên dưới bằng ứng dụng tương thích",
-    "selectProtocol": "Giao thức",
-    "protocolAuto": "Tự động",
-    "protocolAll": "Tất cả",
     "importTo": "Nhập vào {{client}}",
     "viewDocsBtn": "Cần trợ giúp? Xem hướng dẫn"
   },

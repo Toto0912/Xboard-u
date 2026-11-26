@@ -125,9 +125,6 @@
     "copySubUrl": "複製訂閱網址",
     "scanQrCode": "掃描 QR Code 訂閱",
     "qrModalDesc": "使用支援掃碼的用戶端掃描下方 QR Code 匯入訂閱",
-    "selectProtocol": "選擇協定",
-    "protocolAuto": "自動",
-    "protocolAll": "全部",
     "importTo": "匯入到 {{client}}",
     "viewDocsBtn": "不會使用？查看使用教學"
   },

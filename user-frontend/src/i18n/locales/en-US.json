@@ -125,9 +125,6 @@
     "copySubUrl": "Copy Subscription URL",
     "scanQrCode": "Scan QR Code",
     "qrModalDesc": "Scan the QR code below with a compatible client",
-    "selectProtocol": "Protocol",
-    "protocolAuto": "Auto",
-    "protocolAll": "All",
     "importTo": "Import to {{client}}",
     "viewDocsBtn": "Need help? View tutorials"
   },
