@@ -83,12 +83,14 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
         if (!is_string($secret) || trim($secret) === '' || !is_array($params)) {
             return false;
         }
-        foreach ($params as $value) {
-            if (!is_string($value) && !is_int($value)) {
+        foreach ($params as $key => $value) {
+            if ($value === null || $value === '') {
+                unset($params[$key]);
+            } elseif (!is_string($value) && !is_int($value)) {
                 return false;
             }
         }
-        if (!is_string($params['sign'] ?? null)
+        if (!isset($params['money']) || !is_string($params['sign'] ?? null)
             || !is_string($params['out_trade_no'] ?? null) || trim($params['out_trade_no']) === ''
             || !is_string($params['trade_no'] ?? null) || trim($params['trade_no']) === '') {
             return false;
@@ -114,7 +116,7 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
             'trade_no' => $params['out_trade_no'],
             'callback_no' => $params['trade_no'],
             'transaction_no' => $params['trade_no'],
-            'verified_order_gross' => $params['money'] ?? null,
+            'verified_order_gross' => $params['money'],
         ];
     }
 }

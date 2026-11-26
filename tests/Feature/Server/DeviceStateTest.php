@@ -38,6 +38,37 @@ class DeviceStateTest extends TestCase
         ]);
     }
 
+    public function test_legacy_index_scan_completes_for_empty_small_and_large_keyspaces(): void
+    {
+        $service = app(DeviceStateService::class);
+        $now = time();
+        foreach ([0, 8, 1500] as $node => $size) {
+            $nodeId = 41 + $node;
+            Redis::pipeline(function ($pipe) use ($nodeId, $size, $now) {
+                for ($uid = 1; $uid <= $size; $uid++) {
+                    $pipe->hset("user_devices:{$uid}", "{$nodeId}:192.0.2.1", $now);
+                }
+            });
+            $expected = $size ? array_fill(1, $size, ['192.0.2.1']) : [];
+            $devices = $service->getNodeDevices($nodeId);
+            ksort($devices);
+            $this->assertSame($expected, $devices);
+            $this->assertTrue((bool) Redis::exists("node_devices:indexed:{$nodeId}"));
+        }
+    }
+
+    public function test_failed_index_scan_cannot_mark_the_node_ready(): void
+    {
+        $connection = \Mockery::mock(\Illuminate\Redis\Connections\PhpRedisConnection::class);
+        $connection->shouldReceive('rawCommand')->once()->andReturn(false);
+        Redis::shouldReceive('exists')->once()->andReturn(0);
+        Redis::shouldReceive('connection')->once()->andReturn($connection);
+        Redis::shouldReceive('eval')->never();
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Redis device index scan');
+        app(DeviceStateService::class)->getNodeDevices(42);
+    }
+
     public function test_complete_snapshots_deduplicate_ips_and_remove_only_the_target_node(): void
     {
         $user = $this->user(1);

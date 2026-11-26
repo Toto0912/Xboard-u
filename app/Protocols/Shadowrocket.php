@@ -4,6 +4,7 @@ namespace App\Protocols;
 
 use App\Utils\Helper;
 use App\Support\AbstractProtocol;
+use App\Support\NaiveSubscription;
 use App\Models\Server;
 
 class Shadowrocket extends AbstractProtocol
@@ -18,6 +19,7 @@ class Shadowrocket extends AbstractProtocol
         Server::TYPE_TUIC,
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
+        Server::TYPE_NAIVE,
     ];
 
     protected $protocolRequirements = [
@@ -66,11 +68,33 @@ class Shadowrocket extends AbstractProtocol
             if ($item['type'] === Server::TYPE_SOCKS) {
                 $uri .= self::buildSocks($item['password'], $item);
             }
+            if ($item['type'] === Server::TYPE_NAIVE) {
+                $uri .= $this->buildNaive($item);
+            }
         }
         return response(base64_encode($uri))
             ->header('content-type', 'text/plain');
     }
 
+
+    private function buildNaive(array $server): string
+    {
+        // Shadowrocket reports either an app version or a numeric CFBundleVersion.
+        $version = $this->clientVersion ?? '';
+        $minimum = ctype_digit($version) ? '1959' : '2.2.24';
+        if ($version === '' || version_compare($version, $minimum, '<')) {
+            return '';
+        }
+        $naive = NaiveSubscription::from($this->user, $server);
+        if ($naive === null || data_get($server, 'protocol_settings.tls_settings.ech.enabled')) {
+            return '';
+        }
+
+        $host = Helper::wrapIPv6($naive['server']);
+        $endpoint = base64_encode("{$naive['username']}:{$naive['password']}@{$host}:{$naive['server_port']}");
+        $query = http_build_query(['padding' => 1, 'peer' => $naive['tls']['server_name'] ?? null], '', '&', PHP_QUERY_RFC3986);
+        return "http2://{$endpoint}?{$query}#" . rawurlencode($server['name']) . "\r\n";
+    }
 
     public static function buildShadowsocks($password, $server)
     {
@@ -147,8 +171,7 @@ class Shadowrocket extends AbstractProtocol
                     $config['path'] = $path;
                 }
                 if ($host = data_get($protocol_settings, 'network_settings.host')) {
-                    $config['obfsParam'] = $host[0] ?? $server['host'];
-                    $config['peer'] = $host [0] ?? $server['host'];
+                    $config['obfsParam'] = $config['peer'] = is_array($host) ? reset($host) : $host;
                 }
                 break;
             case 'xhttp':
@@ -350,6 +373,7 @@ class Shadowrocket extends AbstractProtocol
     {
         $protocol_settings = $server['protocol_settings'];
         $uri = ''; // 初始化变量
+        $name = rawurlencode($server['name']);
 
         switch (data_get($protocol_settings, 'version')) {
             case 1:
@@ -373,7 +397,7 @@ class Shadowrocket extends AbstractProtocol
                 $query = http_build_query($params);
                 $addr = Helper::wrapIPv6($server['host']);
 
-                $uri = "hysteria://{$addr}:{$server['port']}?{$query}#{$server['name']}";
+                $uri = "hysteria://{$addr}:{$server['port']}?{$query}#{$name}";
                 $uri .= "\r\n";
                 break;
             case 2:
@@ -401,7 +425,7 @@ class Shadowrocket extends AbstractProtocol
                 $query = http_build_query($params);
                 $addr = Helper::wrapIPv6($server['host']);
 
-                $uri = "hysteria2://{$password}@{$addr}:{$server['port']}?{$query}#{$server['name']}";
+                $uri = "hysteria2://{$password}@{$addr}:{$server['port']}?{$query}#{$name}";
                 $uri .= "\r\n";
                 break;
         }
@@ -411,13 +435,14 @@ class Shadowrocket extends AbstractProtocol
     {
         $protocol_settings = $server['protocol_settings'];
         $name = rawurlencode($server['name']);
+        $alpn = data_get($protocol_settings, 'alpn');
         $params = [
-            'alpn' => data_get($protocol_settings, 'alpn'),
+            'alpn' => is_array($alpn) ? implode(',', $alpn) : $alpn,
             'sni' => data_get($protocol_settings, 'tls.server_name'),
             'insecure' => data_get($protocol_settings, 'tls.allow_insecure'),
             'congestion_control' => data_get($protocol_settings, 'congestion_control', 'cubic')
         ];
-        if (data_get($protocol_settings, 'version') === 4) {
+        if ((int) data_get($protocol_settings, 'version') === 4) {
             $params['token'] = $password;
         } else {
             $params['uuid'] = $password;

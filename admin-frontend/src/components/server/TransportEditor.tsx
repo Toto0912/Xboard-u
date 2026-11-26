@@ -81,6 +81,11 @@ export function TransportEditor({
   );
   const [jsonError, setJsonError] = useState<string | null>(null);
   const lastInvalidRef = useRef(false);
+  const invalidHandler = useRef(onDraftInvalidChange);
+  invalidHandler.current = onDraftInvalidChange;
+  useEffect(() => () => {
+    if (lastInvalidRef.current) invalidHandler.current(false);
+  }, []);
 
   const reportInvalid = (invalid: boolean) => {
     if (lastInvalidRef.current !== invalid) {
@@ -97,6 +102,7 @@ export function TransportEditor({
     if (mode === 'form' && !showMore) {
       setJsonDraft(JSON.stringify(networkSettings ?? {}, null, 2));
       setJsonError(null);
+      reportInvalid(false);
     }
   }, [networkSettings, mode, showMore]);
 

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Server;
 use App\Services\Plugin\HookManager;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 final class TrafficBatchReceiver
 {
@@ -69,24 +71,79 @@ final class TrafficBatchReceiver
                 'payload' => json_encode($usage, JSON_THROW_ON_ERROR),
                 'activity_users' => json_encode(ServerTrafficActivity::activeUsers($data), JSON_THROW_ON_ERROR),
             ]);
-            $tasks = [];
-            foreach (['usage', 'user_stat', 'server_stat', 'quota_check', 'activity'] as $kind) {
-                $tasks[] = ['receipt_id' => $receipt->id, 'kind' => $kind,
-                    'available_at' => $kind === 'quota_check' ? null : $received->timestamp];
-            }
-            DB::table('v2_traffic_batch_tasks')->insert($tasks);
+            $this->stageTasks($receipt->id, $received->timestamp, true);
             return [$receipt->id, false];
         }, 3);
         abort_if($conflict, 409, 'Batch ID already received with different traffic');
         if ($receiptId !== null) {
-            // Redis availability cannot undo durable acceptance. The scheduler also scans pending tasks.
-            try {
-                app(TrafficBatchOutbox::class)->dispatchDue($receiptId);
-            } catch (\Throwable $error) {
-                report($error);
-            }
+            DB::afterCommit(fn () => $this->dispatchReceipt($receiptId));
         }
         return $batchId;
+    }
+
+    /**
+     * The caller has recorded raw activity and invoked the two legacy hooks once on the whole report.
+     * Each HTTP submission is independent. Only retries of the resulting jobs share an identity.
+     */
+    public function acceptLegacy(int $nodeId, string $nodeType, array $server, mixed $protocol, array $data, int $day): bool
+    {
+        if (!is_string($protocol) || $protocol === '' || strlen($protocol) > 11
+            || !isset($server['id'], $server['rate']) || !is_numeric($server['rate'])
+            || filter_var($server['id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => self::MAX_STAT_ID]]) === false) {
+            return false;
+        }
+        $rate = (float) $server['rate'];
+        if (!is_finite($rate) || $rate < 0 || $rate > 99999999.99) {
+            return false;
+        }
+
+        $chunks = array_chunk($data, 1000, true);
+        try {
+            $totals = array_map(fn ($chunk) => $this->totals($chunk, $rate), $chunks);
+        } catch (HttpException $e) {
+            // Some external legacy filters return fractional byte values. Preserve their existing queue contract.
+            return false;
+        }
+
+        $received = now()->timestamp;
+        DB::transaction(function () use ($nodeId, $nodeType, $server, $protocol, $rate, $day, $received, $chunks, $totals) {
+            foreach ($chunks as $index => $chunk) {
+                $payload = json_encode($chunk, JSON_THROW_ON_ERROR);
+                $id = DB::table('v2_traffic_batches')->insertGetId([
+                    'server_id' => $nodeId, 'batch_id' => (string) Str::uuid(), 'digest' => hash('sha256', $payload),
+                    'received_at' => $received, 'record_at' => $day, 'activity_type' => $nodeType,
+                    'stat_server_id' => $server['id'], 'protocol' => $protocol, 'rate' => $rate,
+                    'raw_u' => $totals[$index][0], 'raw_d' => $totals[$index][1], 'payload' => $payload,
+                ]);
+                $this->stageTasks($id, $received, false);
+                DB::afterCommit(fn () => $this->dispatchReceipt($id));
+            }
+        }, 3);
+        return true;
+    }
+
+    private function stageTasks(int $receiptId, int $receivedAt, bool $withActivity): void
+    {
+        $kinds = ['usage', 'user_stat', 'server_stat', 'quota_check'];
+        if ($withActivity) {
+            $kinds[] = 'activity';
+        }
+        $tasks = [];
+        foreach ($kinds as $kind) {
+            $tasks[] = ['receipt_id' => $receiptId, 'kind' => $kind,
+                'available_at' => $kind === 'quota_check' ? null : $receivedAt];
+        }
+        DB::table('v2_traffic_batch_tasks')->insert($tasks);
+    }
+
+    private function dispatchReceipt(int $id): void
+    {
+        try {
+            TrafficBatchOutbox::dispatchDue($id);
+        } catch (\Throwable $error) {
+            // A queue outage cannot reverse committed work. The scheduler will redispatch it.
+            report($error);
+        }
     }
 
     private function totals(array $data, ?float $rate = null): array

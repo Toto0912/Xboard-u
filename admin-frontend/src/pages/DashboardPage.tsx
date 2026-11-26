@@ -29,7 +29,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { fetchConfig } from '@/api/config';
+import { useCurrencySymbol } from '@/lib/settings';
 import {
   getFailedJobs,
   getOrderStats,
@@ -335,11 +335,7 @@ export default function DashboardPage() {
     [datePreset, customOrderRange],
   );
 
-  const configQuery = useQuery({
-    queryKey: ['admin-config'],
-    queryFn: fetchConfig,
-  });
-  const symbol = configQuery.data?.site?.currency_symbol || '¥';
+  const symbol = useCurrencySymbol();
 
   const statsQuery = useQuery({
     queryKey: ['dashboard-stats'],

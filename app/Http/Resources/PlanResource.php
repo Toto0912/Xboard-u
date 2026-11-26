@@ -52,7 +52,7 @@ class PlanResource extends JsonResource
             ->mapWithKeys(function (string $newPeriod, string $legacyPeriod): array {
                 $price = $this->resource['prices'][$newPeriod] ?? null;
                 return [
-                    $legacyPeriod => $price !== null
+                    $legacyPeriod => Plan::isSalePrice($newPeriod, $price)
                         ? (float) $price * self::PRICE_MULTIPLIER
                         : null
                 ];

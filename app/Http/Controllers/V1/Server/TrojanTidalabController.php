@@ -22,7 +22,6 @@ class TrojanTidalabController extends Controller
     // 后端获取用户
     public function user(Request $request)
     {
-        ini_set('memory_limit', -1);
         $server = $request->attributes->get('node_info');
         if ($server->type !== 'trojan') {
             return $this->fail([400, '节点不存在']);
@@ -56,12 +55,7 @@ class TrojanTidalabController extends Controller
         }
         $data = json_decode(request()->getContent(), true);
         Cache::put(CacheKey::get('SERVER_TROJAN_LAST_PUSH_AT', $server->id), time(), 3600);
-        $userService = new UserService();
-        $formatData = [];
-        foreach ($data as $item) {
-            $formatData[$item['user_id']] = [$item['u'], $item['d']];
-        }
-        $userService->trafficFetch($server, 'trojan', $formatData);
+        ServerService::processTidalabTraffic($server, $data);
 
         return response([
             'ret' => 1,

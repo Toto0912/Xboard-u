@@ -190,10 +190,27 @@ class QuantumultX extends AbstractProtocol
             "password={$password}",
         ];
 
+        $network = data_get($protocol_settings, 'network') ?: 'tcp';
+        $protocol_settings['network'] = $network;
+        $protocol_settings['tls'] ??= 1;
+        if (!in_array($network, ['tcp', 'ws'], true) || (int) data_get($protocol_settings, 'tls', 1) === 0
+            || ($network === 'tcp' && !in_array(data_get($protocol_settings, 'network_settings.header.type') ?? 'none', ['none', 'tcp'], true))) {
+            return '';
+        }
         $tlsData = [
             'allow_insecure' => data_get($protocol_settings, 'tls_settings.allow_insecure', false),
             'server_name' => data_get($protocol_settings, 'tls_settings.server_name'),
         ];
+        if ($network === 'ws') {
+            $host = data_get($protocol_settings, 'network_settings.headers.Host');
+            $sni = (int) $protocol_settings['tls'] === 2
+                ? data_get($protocol_settings, 'reality_settings.server_name')
+                : $tlsData['server_name'];
+            // Quantumult X uses one obfs-host field for both names.
+            if ($host && (!is_string($host) || ($sni && strcasecmp($host, $sni) !== 0))) {
+                return '';
+            }
+        }
         self::applyTransportSettings($config, $protocol_settings, true, $tlsData);
         self::applyCommonSettings($config, $server);
 

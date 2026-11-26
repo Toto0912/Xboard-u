@@ -118,6 +118,8 @@ class UserService
     public function trafficFetch(Server $server, string $protocol, array $data)
     {
         ServerTrafficActivity::record($server, $data);
+        $nodeId = $server->id;
+        $nodeType = $server->type;
         $server->rate = $server->getCurrentRate();
         $server = $server->toArray();
 
@@ -129,6 +131,13 @@ class UserService
         // These jobs use only ID/rate. Do not serialize TLS keys and custom
         // connection settings into every traffic chunk after hooks have run.
         $server = ['id' => $server['id'], 'rate' => $server['rate']];
+        if (TrafficBatchCapability::available()) {
+            if (is_array($data) && (new TrafficBatchReceiver())->acceptLegacy($nodeId, $nodeType, $server, $protocol, $data, $timestamp)) {
+                return;
+            }
+            abort_unless(HookManager::hasHook('traffic.process.before') || HookManager::hasHook('traffic.before_process'),
+                422, 'Invalid traffic report');
+        }
         collect($data)->chunk(1000)->each(function ($chunk) use ($timestamp, $server, $protocol) {
             TrafficFetchJob::dispatch($server, $chunk->toArray(), $protocol, $timestamp);
             StatUserJob::dispatch($server, $chunk->toArray(), $protocol, 'd', $timestamp);

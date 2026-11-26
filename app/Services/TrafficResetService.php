@@ -40,10 +40,10 @@ class TrafficResetService
   /**
    * Perform the traffic reset for a user.
    */
-  public function performReset(User $user, string $triggerSource = TrafficResetLog::SOURCE_MANUAL): bool
+  public function performReset(User $user, string $triggerSource = TrafficResetLog::SOURCE_MANUAL, array $metadata = []): bool
   {
     try {
-      return DB::transaction(function () use ($user, $triggerSource) {
+      return DB::transaction(function () use ($user, $triggerSource, $metadata) {
         $oldUpload = $user->u ?? 0;
         $oldDownload = $user->d ?? 0;
         $oldTotal = $oldUpload + $oldDownload;
@@ -64,6 +64,7 @@ class TrafficResetService
           'old_upload' => $oldUpload,
           'old_download' => $oldDownload,
           'old_total' => $oldTotal,
+          'metadata' => $metadata ?: null,
           'new_upload' => 0,
           'new_download' => 0,
           'new_total' => 0,
@@ -394,10 +395,19 @@ class TrafficResetService
    */
   public function manualReset(User $user, array $metadata = []): bool
   {
-    if (!$this->canReset($user)) {
-      return false;
-    }
-
-    return $this->performReset($user, TrafficResetLog::SOURCE_MANUAL);
+    return $user->getConnection()->transaction(function () use ($user, $metadata) {
+      $current = $user->newQuery()->lockForUpdate()->find($user->getKey());
+      if (!$current) return false;
+      if (isset($metadata['operation_id']) && TrafficResetLog::query()->useWritePdo()
+          ->where('user_id', $current->id)->where('trigger_source', TrafficResetLog::SOURCE_MANUAL)
+          ->where('metadata->operation_id', $metadata['operation_id'])->exists()) {
+        $user->setRawAttributes($current->getAttributes(), true);
+        return true;
+      }
+      if (!$this->canReset($current) || !$this->performReset($current, TrafficResetLog::SOURCE_MANUAL, $metadata)) return false;
+      $user->setRawAttributes($current->getAttributes(), true);
+      $user->setRelations($current->getRelations());
+      return true;
+    });
   }
 }

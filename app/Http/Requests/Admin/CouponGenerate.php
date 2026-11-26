@@ -11,19 +11,28 @@ class CouponGenerate extends FormRequest
      *
      * @return array
      */
+    protected function prepareForValidation(): void
+    {
+        $periods = $this->input('limit_period');
+        if (is_array($periods) && array_filter($periods, 'is_string') === $periods) {
+            $this->merge(['limit_period' => array_values(array_unique(array_map([\App\Services\PlanService::class, 'getPeriodKey'], $periods)))]);
+        }
+    }
+
     public function rules()
     {
         return [
-            'generate_count' => 'nullable|integer|max:500',
+            'generate_count' => 'nullable|integer|min:0|max:500',
             'name' => 'required',
             'type' => 'required|in:1,2',
-            'value' => 'required|integer',
+            'value' => (int) $this->input('type') === 2 ? 'required|integer|between:1,100' : 'required|integer|min:1',
             'started_at' => 'required|integer',
             'ended_at' => 'required|integer',
             'limit_use' => 'nullable|integer',
             'limit_use_with_user' => 'nullable|integer',
             'limit_plan_ids' => 'nullable|array',
             'limit_period' => 'nullable|array',
+            'limit_period.*' => 'string',
             'code' => ''
         ];
     }

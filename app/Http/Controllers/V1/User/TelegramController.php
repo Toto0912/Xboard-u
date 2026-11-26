@@ -12,9 +12,8 @@ class TelegramController extends Controller
     public function getBotInfo()
     {
         $telegramService = new TelegramService();
-        $response = $telegramService->getMe();
         $data = [
-            'username' => $response->result->username
+            'username' => $telegramService->getBotUsername(),
         ];
         return $this->success($data);
     }

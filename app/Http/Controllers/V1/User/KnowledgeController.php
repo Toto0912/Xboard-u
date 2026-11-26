@@ -14,11 +14,21 @@ use Illuminate\Http\Request;
 
 class KnowledgeController extends Controller
 {
+    private const SUBSCRIBER_BLOCK = '/<!--access start-->.*?<!--access end-->/s';
     private UserService $userService;
 
     public function __construct(UserService $userService)
     {
         $this->userService = $userService;
+    }
+
+    public function getCategory(Request $request)
+    {
+        $request->validate(['language' => 'nullable|string|max:10']);
+        $categories = $this->buildKnowledgeQuery(['category'])
+            ->when($request->filled('language'), fn ($q) => $q->where('language', $request->input('language')))
+            ->distinct()->orderBy('category')->pluck('category');
+        return $this->success($categories);
     }
 
     public function fetch(Request $request)
@@ -57,7 +67,8 @@ class KnowledgeController extends Controller
             ->orderBy('sort', 'ASC');
 
         $keyword = $request->input('keyword');
-        if ($keyword) {
+        $subscribed = $this->userService->isAvailable($request->user());
+        if ($keyword !== null && $keyword !== '') {
             $builder = $builder->where(function ($query) use ($keyword) {
                 $query->where('title', 'LIKE', "%{$keyword}%")
                     ->orWhere('body', 'LIKE', "%{$keyword}%");
@@ -65,6 +76,13 @@ class KnowledgeController extends Controller
         }
 
         $knowledges = $builder->get()
+            ->filter(function ($knowledge) use ($subscribed, $keyword) {
+                if ($keyword === null || $keyword === '') {
+                    return true;
+                }
+                $visible = $subscribed ? (string) $knowledge->body : preg_replace(self::SUBSCRIBER_BLOCK, '', (string) $knowledge->body);
+                return mb_stripos($knowledge->title, $keyword) !== false || mb_stripos($visible, $keyword) !== false;
+            })
             ->map(function ($knowledge) use ($request) {
                 $knowledge = $knowledge->toArray();
                 $knowledge = $this->processKnowledgeContent($knowledge, $request->user());
@@ -100,7 +118,7 @@ class KnowledgeController extends Controller
         $rules = [
             [
                 'type' => 'regex',
-                'pattern' => '/<!--access start-->(.*?)<!--access end-->/s',
+                'pattern' => self::SUBSCRIBER_BLOCK,
                 'replacement' => '<div class="v2board-no-access">' . __('You must have a valid subscription to view content in this area') . '</div>'
             ]
         ];

@@ -21,6 +21,18 @@ class Setting
         $this->cache = Cache::store('redis');
     }
 
+    public static function matchesNodeToken(mixed $token, bool $fresh = false): bool
+    {
+        if (!is_string($token) || $token === '') {
+            return false;
+        }
+        // Workerman has no HTTP request boundary to reset the scoped settings.
+        $stored = $fresh
+            ? (SettingModel::query()->useWritePdo()->toBase()->where('name', 'server_token')->value('value') ?? config('v2board.server_token'))
+            : admin_setting('server_token');
+        return is_string($stored) && $stored !== '' && hash_equals($stored, $token);
+    }
+
     /**
      * 获取配置.
      */
@@ -83,7 +95,7 @@ class Setting
             $key = strtolower($isNumericIndex ? $item : $index);
             $default = $isNumericIndex ? config('v2board.' . $item) : (config('v2board.' . $key) ?? $item);
             
-            $result[$item] = Arr::get($this->loadedSettings, $key, $default);
+            $result[$key] = Arr::get($this->loadedSettings, $key, $default);
         }
         
         return $result;
@@ -108,7 +120,7 @@ class Setting
         }
 
         $read = static fn () => array_change_key_case(
-            SettingModel::query()->useWritePdo()->pluck('value', 'name')->all(), CASE_LOWER
+            SettingModel::query()->useWritePdo()->toBase()->pluck('value', 'name')->all(), CASE_LOWER
         );
         try {
             $settings = $this->cache->rememberForever(self::CACHE_KEY, $read);
@@ -125,7 +137,7 @@ class Setting
             }
         }
         foreach ($settings as $key => $value) {
-            if (is_string($value)) {
+            if ($key !== 'server_token' && is_string($value)) {
                 $decoded = json_decode($value, true);
                 if (json_last_error() === JSON_ERROR_NONE) {
                     $settings[$key] = $decoded;
@@ -138,7 +150,7 @@ class Setting
     /**
      * 清空缓存
      */
-    private function flush(): void
+    public function flush(): void
     {
         $this->cache->forget(self::CACHE_KEY);
         $this->loadedSettings = null;

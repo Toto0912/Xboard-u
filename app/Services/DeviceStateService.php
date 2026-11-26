@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Redis\Connections\PhpRedisConnection;
 use Illuminate\Support\Facades\Redis;
+use RuntimeException;
 
 class DeviceStateService
 {
@@ -94,12 +96,20 @@ class DeviceStateService
     {
         if (Redis::exists($this->readyKey($nodeId))) return;
         $redisPrefix = config('database.redis.options.prefix', '');
-        $cursor = null;
+        $connection = Redis::connection();
+        $cursor = '0';
+        $pattern = $redisPrefix . self::PREFIX . '*';
         $members = [];
         $cutoff = time() - self::TTL;
         do {
-            $page = Redis::scan($cursor, ['match' => $redisPrefix . self::PREFIX . '*', 'count' => 500]);
-            if ($page === false) break;
+            // PhpRedisConnection::scan() folds a denied command into the same false
+            // value as a successful empty final page. The raw reply preserves both.
+            $page = $connection instanceof PhpRedisConnection
+                ? $connection->rawCommand('SCAN', $cursor, 'MATCH', $pattern, 'COUNT', 500)
+                : $connection->scan($cursor, ['match' => $pattern, 'count' => 500]);
+            if (!is_array($page) || !isset($page[0], $page[1]) || !ctype_digit((string) $page[0]) || !is_array($page[1])) {
+                throw new RuntimeException('Redis device index scan did not return a complete page.');
+            }
             [$cursor, $keys] = $page;
             $ids = [];
             foreach ($keys as $key) {
@@ -113,7 +123,7 @@ class DeviceStateService
                     }
                 }
             }
-        } while ($cursor !== 0);
+        } while ((string) $cursor !== '0');
         Redis::eval($this->script('device-index'), 2, $this->indexKey($nodeId),
             $this->readyKey($nodeId), self::TTL, json_encode((object) $members, JSON_THROW_ON_ERROR));
     }

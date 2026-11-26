@@ -17,12 +17,20 @@ class TicketService
     {
         try {
             DB::beginTransaction();
+            $current = Ticket::whereKey($ticket->id)->lockForUpdate()->firstOrFail();
+            $ticket->setRawAttributes($current->getAttributes(), true);
+            $actor = User::find($userId);
+            if (!$actor || $actor->banned || (int) $ticket->status === Ticket::STATUS_CLOSED
+                || ((int) $actor->id !== (int) $ticket->user_id && !$actor->is_admin && !$actor->is_staff)) {
+                DB::rollBack();
+                return false;
+            }
             $ticketMessage = TicketMessage::create([
                 'user_id' => $userId,
                 'ticket_id' => $ticket->id,
                 'message' => $message
             ]);
-            $isAdmin = $userId !== $ticket->user_id;
+            $isAdmin = (int) $userId !== (int) $ticket->user_id;
             $ticket->reply_status = $isAdmin
                 ? Ticket::REPLY_STATUS_REPLIED
                 : Ticket::REPLY_STATUS_WAITING;
@@ -40,6 +48,10 @@ class TicketService
 
     public function replyByAdmin($ticketId, $message, $userId): void
     {
+        $actor = User::find($userId);
+        if (!$actor || $actor->banned || (!$actor->is_admin && !$actor->is_staff)) {
+            throw new ApiException('没有工单回复权限', 403);
+        }
         $ticket = Ticket::where('id', $ticketId)->first();
         if (!$ticket) {
             throw new ApiException('工单不存在');
@@ -101,6 +113,7 @@ class TicketService
                 'template_value' => [
                     'name' => admin_setting('app_name', 'XBoard'),
                     'url' => admin_setting('app_url'),
+                    'content_mode' => 'text',
                     'content' => "主题：{$ticket->subject}\r\n回复内容：{$ticketMessage->message}"
                 ]
             ]);

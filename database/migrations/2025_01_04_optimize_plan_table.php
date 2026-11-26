@@ -92,19 +92,21 @@ return new class extends Migration {
         // Step 2: Restore data from new format to old format
         DB::table('v2_plan')->orderBy('id')->chunk(100, function ($plans) {
             foreach ($plans as $plan) {
-                $prices = json_decode($plan->prices, true) ?? [];
+                $prices = json_decode($plan->prices ?? '[]', true) ?? [];
+                $cents = static fn (string $period): ?int => isset($prices[$period])
+                    ? (int) round($prices[$period] * 100) : null;
 
                 DB::table('v2_plan')
                     ->where('id', $plan->id)
                     ->update([
-                        'month_price' => $prices['monthly'] * 100 ?? null,
-                        'quarter_price' => $prices['quarterly'] * 100 ?? null,
-                        'half_year_price' => $prices['half_yearly'] * 100 ?? null,
-                        'year_price' => $prices['yearly'] * 100 ?? null,
-                        'two_year_price' => $prices['two_yearly'] * 100 ?? null,
-                        'three_year_price' => $prices['three_yearly'] * 100 ?? null,
-                        'onetime_price' => $prices['onetime'] * 100 ?? null,
-                        'reset_price' => $prices['reset_traffic'] * 100 ?? null,
+                        'month_price' => $cents('monthly'),
+                        'quarter_price' => $cents('quarterly'),
+                        'half_year_price' => $cents('half_yearly'),
+                        'year_price' => $cents('yearly'),
+                        'two_year_price' => $cents('two_yearly'),
+                        'three_year_price' => $cents('three_yearly'),
+                        'onetime_price' => $cents('onetime'),
+                        'reset_price' => $cents('reset_traffic'),
                     ]);
             }
         });

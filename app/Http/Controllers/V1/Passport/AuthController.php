@@ -9,6 +9,8 @@ use App\Http\Requests\Passport\AuthForget;
 use App\Http\Requests\Passport\AuthLogin;
 use App\Http\Requests\Passport\AuthRegister;
 use App\Services\Auth\LoginService;
+use App\Services\Auth\LoginTicket;
+use Illuminate\Support\Facades\DB;
 use App\Services\Auth\MailLinkService;
 use App\Services\Auth\RegisterService;
 use App\Services\AuthService;
@@ -41,7 +43,7 @@ class AuthController extends Controller
 
         $params = $request->validate([
             'email' => 'required|email:strict|max:64',
-            'redirect' => 'nullable'
+            'redirect' => 'nullable|string|max:2048'
         ]);
 
         [$success, $result] = $this->mailLinkService->handleMailLink(
@@ -94,9 +96,10 @@ class AuthController extends Controller
      */
     public function token2Login(Request $request)
     {
+        $request->validate(['token' => 'nullable|string', 'verify' => 'nullable|string', 'redirect' => 'nullable|string|max:2048']);
         // 处理直接通过token重定向
         if ($token = $request->input('token')) {
-            $redirect = '/#/login?verify=' . $token . '&redirect=' . ($request->input('redirect', 'dashboard'));
+            $redirect = LoginTicket::loginPath($token, $request->input('redirect'));
 
             return redirect()->to(
                 admin_setting('app_url')
@@ -107,27 +110,17 @@ class AuthController extends Controller
 
         // 处理通过验证码登录
         if ($verify = $request->input('verify')) {
-            $userId = $this->mailLinkService->handleTokenLogin($verify);
-
-            if (!$userId) {
+            $session = DB::transaction(function () use ($verify) {
+                $user = LoginTicket::consume($verify);
+                return $user ? (new AuthService($user))->generateAuthData() : null;
+            });
+            if (!$session) {
                 return response()->json([
                     'message' => __('Token error')
                 ], 400);
             }
 
-            $user = \App\Models\User::find($userId);
-
-            if (!$user || $user->banned) {
-                return response()->json([
-                    'message' => __('User not found')
-                ], 400);
-            }
-
-            $authService = new AuthService($user);
-
-            return response()->json([
-                'data' => $authService->generateAuthData()
-            ]);
+            return response()->json(['data' => $session]);
         }
 
         return response()->json([
@@ -140,6 +133,7 @@ class AuthController extends Controller
      */
     public function getQuickLoginUrl(Request $request)
     {
+        $request->validate(['redirect' => 'nullable|string|max:2048']);
         $authorization = $request->input('auth_data') ?? $request->header('authorization');
 
         if (!is_string($authorization) || $authorization === '') {

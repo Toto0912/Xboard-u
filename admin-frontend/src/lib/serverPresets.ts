@@ -116,7 +116,7 @@ export const SHADOWSOCKS_CIPHERS = [
   'chacha20-ietf-poly1305',
   '2022-blake3-aes-128-gcm',
   '2022-blake3-aes-256-gcm',
-  '2022-blake3-chacha20-poly1305',
+
 ];
 
 export const SHADOWSOCKS_PLUGINS = [

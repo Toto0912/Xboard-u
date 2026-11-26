@@ -7,6 +7,8 @@ use App\Services\Plugin\HookManager;
 use App\Utils\CacheKey;
 use App\Utils\Helper;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 
 class LoginService
 {
@@ -21,10 +23,10 @@ class LoginService
     {
         $email = User::normalizeEmail($email);
 
-        // 检查密码错误限制
-        if ((int) admin_setting('password_limit_enable', true)) {
-            $passwordErrorCount = (int) Cache::get(CacheKey::get('PASSWORD_ERROR_LIMIT', $email), 0);
-            if ($passwordErrorCount >= (int) admin_setting('password_limit_count', 5)) {
+        $attemptKey = CacheKey::get('PASSWORD_ERROR_LIMIT', $email);
+        $limited = (bool) admin_setting('password_limit_enable', true);
+        if ($limited) {
+            if (!AttemptBudget::reserve($attemptKey, (int) admin_setting('password_limit_count', 5), 60 * (int) admin_setting('password_limit_expire', 60))) {
                 return [
                     false,
                     [
@@ -52,16 +54,11 @@ class LoginService
                 $user->password
             )
         ) {
-            // 增加密码错误计数
-            if ((int) admin_setting('password_limit_enable', true)) {
-                $passwordErrorCount = (int) Cache::get(CacheKey::get('PASSWORD_ERROR_LIMIT', $email), 0);
-                Cache::put(
-                    CacheKey::get('PASSWORD_ERROR_LIMIT', $email),
-                    (int) $passwordErrorCount + 1,
-                    60 * (int) admin_setting('password_limit_expire', 60)
-                );
-            }
             return [false, [400, __('Incorrect email or password')]];
+        }
+
+        if ($limited) {
+            AttemptBudget::release($attemptKey);
         }
 
         // 检查账户状态
@@ -89,39 +86,46 @@ class LoginService
     {
         $email = User::normalizeEmail($email);
 
-        // 检查重置请求限制
+        $result = Cache::lock(CacheKey::get('FORGET_REQUEST_LIMIT', $email) . ':reset', 30)
+            ->get(fn () => $this->resetWithCode($email, $emailCode, $password));
+
+        return $result === false ? [false, [429, __('Reset failed, Please try again later')]] : $result;
+    }
+
+    private function resetWithCode(string $email, string $emailCode, string $password): array
+    {
         $forgetRequestLimitKey = CacheKey::get('FORGET_REQUEST_LIMIT', $email);
-        $forgetRequestLimit = (int) Cache::get($forgetRequestLimitKey);
+        $forgetRequestLimit = RateLimiter::attempts($forgetRequestLimitKey);
         if ($forgetRequestLimit >= 3) {
             return [false, [429, __('Reset failed, Please try again later')]];
         }
 
         // 验证邮箱验证码
-        $cachedEmailCode = Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $email));
-        if ($cachedEmailCode === null || !hash_equals((string) $cachedEmailCode, $emailCode)) {
-            Cache::put($forgetRequestLimitKey, $forgetRequestLimit ? $forgetRequestLimit + 1 : 1, 300);
+        if (!EmailChallenge::matches($email, 'reset', $emailCode)) {
+            RateLimiter::hit($forgetRequestLimitKey, 300);
             return [false, [400, __('Incorrect email verification code')]];
         }
 
         // 查找用户
-        $user = User::byEmail($email)->first();
+        $user = DB::transaction(function () use ($email, $password) {
+            $user = User::byEmail($email)->lockForUpdate()->first();
+            if ($user) {
+                $user->password = password_hash($password, PASSWORD_DEFAULT);
+                $user->password_algo = null;
+                $user->password_salt = null;
+                if (!$user->save()) {
+                    throw new \RuntimeException('Password update failed');
+                }
+                $user->tokens()->delete();
+            }
+            return $user;
+        });
         if (!$user) {
             return [false, [400, __('This email is not registered in the system')]];
         }
 
-        // 更新密码
-        $user->password = password_hash($password, PASSWORD_DEFAULT);
-        $user->password_algo = NULL;
-        $user->password_salt = NULL;
-
-        if (!$user->save()) {
-            return [false, [500, __('Reset failed')]];
-        }
-
-        HookManager::call('user.password.reset.after', $user);
-
-        // 清除邮箱验证码
         Cache::forget(CacheKey::get('EMAIL_VERIFY_CODE', $email));
+        HookManager::call('user.password.reset.after', $user);
 
         return [true, true];
     }
@@ -136,17 +140,11 @@ class LoginService
      */
     public function generateQuickLoginUrl(User $user, ?string $redirect = null): ?string
     {
-        if (!$user || !$user->exists) {
+        if (!$user->exists || $user->banned) {
             return null;
         }
 
-        $code = Helper::guid();
-        $key = CacheKey::get('TEMP_TOKEN', $code);
-
-        Cache::put($key, $user->id, 60);
-
-        $redirect = $redirect ?: 'dashboard';
-        $loginRedirect = '/#/login?verify=' . $code . '&redirect=' . rawurlencode($redirect);
+        $loginRedirect = LoginTicket::loginPath(LoginTicket::issue($user, 60), $redirect);
 
         if (admin_setting('app_url')) {
             $url = admin_setting('app_url') . $loginRedirect;

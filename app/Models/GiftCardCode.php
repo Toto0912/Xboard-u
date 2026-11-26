@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 /**
  * App\Models\GiftCardCode
@@ -172,11 +173,15 @@ class GiftCardCode extends Model
     public static function generateCode(string $prefix = 'GC'): string
     {
         do {
-            $safePrefix = (string) $prefix;
-            $code = $safePrefix . strtoupper(substr(md5(uniqid($safePrefix . mt_rand(), true)), 0, 12));
+            $code = self::randomCode($prefix);
         } while (self::where('code', $code)->exists());
 
         return $code;
+    }
+
+    private static function randomCode(string $prefix): string
+    {
+        return $prefix . strtoupper(bin2hex(random_bytes(10)));
     }
 
     /**
@@ -184,26 +189,26 @@ class GiftCardCode extends Model
      */
     public static function batchGenerate(int $templateId, int $count, array $options = []): string
     {
-        $batchId = uniqid('batch_');
+        $batchId = 'batch_' . bin2hex(random_bytes(10));
         $prefix = $options['prefix'] ?? 'GC';
         $expiresAt = $options['expires_at'] ?? null;
         $maxUsage = $options['max_usage'] ?? 1;
 
-        $codes = [];
-        for ($i = 0; $i < $count; $i++) {
-            $codes[] = [
-                'template_id' => $templateId,
-                'code' => self::generateCode($prefix),
-                'batch_id' => $batchId,
-                'status' => self::STATUS_UNUSED,
-                'expires_at' => $expiresAt,
-                'max_usage' => $maxUsage,
-                'created_at' => time(),
-                'updated_at' => time(),
-            ];
-        }
-
-        self::insert($codes);
+        $now = time();
+        DB::transaction(function () use ($templateId, $count, $batchId, $prefix, $expiresAt, $maxUsage, $now) {
+            for ($offset = 0; $offset < $count; $offset += 100) {
+                $rows = [];
+                for ($i = $offset; $i < min($offset + 100, $count); $i++) {
+                    $rows[] = [
+                        'template_id' => $templateId, 'code' => self::randomCode($prefix),
+                        'batch_id' => $batchId, 'status' => self::STATUS_UNUSED,
+                        'expires_at' => $expiresAt, 'max_usage' => $maxUsage,
+                        'created_at' => $now, 'updated_at' => $now,
+                    ];
+                }
+                self::insert($rows);
+            }
+        });
 
         return $batchId;
     }

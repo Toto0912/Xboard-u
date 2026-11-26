@@ -114,7 +114,7 @@ function SidebarContent({
     ? version.startsWith('v')
       ? version
       : `v${version}`
-    : 'v2.4.1';
+    : 'v2.4.2';
   const setMobileOpen = useUiStore((s) => s.setMobileSidebarOpen);
 
   return (

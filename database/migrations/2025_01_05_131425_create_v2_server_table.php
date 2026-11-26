@@ -51,7 +51,7 @@ return new class extends Migration {
                     'allow_insecure' => $server->allow_insecure,
                     'server_name' => $server->server_name,
                     'network' => $server->network,
-                    'network_settings' => $server->networkSettings
+                    'network_settings' => json_decode($server->networkSettings ?? 'null') ?? $server->networkSettings,
                 ]),
                 'show' => $server->show,
                 'sort' => $server->sort,
@@ -216,7 +216,7 @@ return new class extends Migration {
         foreach ($servers as $server) {
             $parentId = DB::table('v2_server')
                 ->where('type', $server->type)
-                ->where('code', $server->parent_id)
+                ->where('code', (string) $server->parent_id)
                 ->value('id');
 
             if ($parentId) {
@@ -399,7 +399,9 @@ return new class extends Migration {
                         'allow_insecure' => $settings['allow_insecure'],
                         'server_name' => $settings['server_name'],
                         'network' => $settings['network'] ?? null,
-                        'networkSettings' => $settings['network_settings'] ?? null,
+                        'networkSettings' => isset($settings['network_settings'])
+                            ? (is_string($settings['network_settings']) ? $settings['network_settings'] : json_encode($settings['network_settings']))
+                            : null,
                         'show' => $server->show,
                         'sort' => $server->sort,
                         'created_at' => $timestamp,

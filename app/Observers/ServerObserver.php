@@ -43,7 +43,14 @@ class ServerObserver
     public function deleted(Server $server): void
     {
         $machineId = $server->getOriginal('machine_id') ?: $server->machine_id;
-        $this->afterCommit($server, fn () => $this->notifyMachineChange(null, $machineId));
+        $nodeId = $server->id;
+        $this->afterCommit($server, function () use ($machineId, $nodeId) {
+            if ($machineId) {
+                $this->notifyMachineChange(null, $machineId);
+            } else {
+                NodeSyncService::push($nodeId, 'sync.users', ['users' => []]);
+            }
+        });
     }
 
     private function afterCommit(Server $server, callable $callback): void

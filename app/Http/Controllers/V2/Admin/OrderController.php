@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class OrderController extends Controller
 {
@@ -65,6 +66,7 @@ class OrderController extends Controller
 
     private function applyFiltersAndSorts(Request $request, Builder $builder): void
     {
+        \App\Support\AdminListQuery::validate($request, 'id invite_user_id user_id plan_id coupon_id payment_id type period trade_no callback_no total_amount handling_amount discount_amount surplus_amount surplus_credit refund_amount balance_amount status commission_status commission_balance actual_commission_balance paid_at created_at updated_at');
         $this->applyFilters($request, $builder);
         $this->applySorting($request, $builder);
     }
@@ -76,7 +78,7 @@ class OrderController extends Controller
         }
 
         collect($request->input('filter'))->each(function ($filter) use ($builder) {
-            $field = $filter['id'];
+            $field = $filter['id'] === 'refund_amount' ? 'surplus_credit' : $filter['id'];
             $value = $filter['value'];
 
             $builder->where(function ($query) use ($field, $value) {
@@ -87,9 +89,27 @@ class OrderController extends Controller
 
     private function buildFilterQuery(Builder $query, string $field, mixed $value): void
     {
-        // Handle array values for 'in' operations
+        $isNumber = !in_array($field, ['trade_no', 'callback_no', 'period'], true);
         if (is_array($value)) {
-            $query->whereIn($field, $value);
+            if ($isNumber) {
+                $integers = array_map(static function ($item): int {
+                    if (!is_int($item) && !is_string($item)) {
+                        throw ValidationException::withMessages(['filter' => 'Expected an integer value.']);
+                    }
+                    $text = (string) $item;
+                    if (!preg_match('/^([+-]?)([0-9]+)$/D', $text, $parts)) {
+                        throw ValidationException::withMessages(['filter' => 'Expected an integer value.']);
+                    }
+                    $number = filter_var($parts[1].(ltrim($parts[2], '0') ?: '0'), FILTER_VALIDATE_INT);
+                    if ($number === false) {
+                        throw ValidationException::withMessages(['filter' => 'Integer is out of range.']);
+                    }
+                    return $number;
+                }, $value);
+                $query->whereIntegerInRaw($field, $integers);
+            } else {
+                $query->whereIn($field, $value);
+            }
             return;
         }
 
@@ -100,31 +120,33 @@ class OrderController extends Controller
         }
 
         [$operator, $filterValue] = explode(':', $value, 2);
-
-        // Convert numeric strings to appropriate type
-        if (is_numeric($filterValue)) {
-            $filterValue = strpos($filterValue, '.') !== false
-                ? (float) $filterValue
-                : (int) $filterValue;
+        if (strtolower($operator) === 'null') {
+            $query->whereNull($field);
+            return;
+        }
+        if (strtolower($operator) === 'notnull') {
+            $query->whereNotNull($field);
+            return;
         }
 
-        // Apply operator
-        $query->where($field, match (strtolower($operator)) {
-            'eq' => '=',
-            'gt' => '>',
-            'gte' => '>=',
-            'lt' => '<',
-            'lte' => '<=',
-            'like' => 'like',
-            'notlike' => 'not like',
-            'null' => static fn($q) => $q->whereNull($field),
-            'notnull' => static fn($q) => $q->whereNotNull($field),
-            default => 'like'
-        }, match (strtolower($operator)) {
-            'like', 'notlike' => "%{$filterValue}%",
-            'null', 'notnull' => null,
-            default => $filterValue
-        });
+        $operator = strtolower($operator);
+        $comparison = match ($operator) {
+            'eq' => '=', 'gt' => '>', 'gte' => '>=', 'lt' => '<', 'lte' => '<=',
+            'notlike' => 'not like', default => 'like',
+        };
+        if ($isNumber && !str_contains($comparison, 'like')) {
+            if (strlen($filterValue) > 65 || !preg_match('/^[+-]?[0-9]+(?:\.[0-9]+)?$/D', $filterValue)) {
+                throw ValidationException::withMessages(['filter' => 'Expected a numeric comparison value.']);
+            }
+            // PostgreSQL infers the column's integer type for a bare parameter. A
+            // fractional or wide threshold is valid even if no row can equal it.
+            if ($query->getConnection()->getDriverName() === 'pgsql' && !preg_match('/^[+-]?[0-9]{1,9}$/D', $filterValue)) {
+                $column = $query->getQuery()->getGrammar()->wrap($field);
+                $query->whereRaw("$column $comparison CAST(? AS NUMERIC)", [$filterValue]);
+                return;
+            }
+        }
+        $query->where($field, $comparison, in_array($operator, ['like', 'notlike'], true) ? "%{$filterValue}%" : $filterValue);
     }
 
     private function applySorting(Request $request, Builder $builder): void
@@ -134,8 +156,8 @@ class OrderController extends Controller
         }
 
         collect($request->input('sort'))->each(function ($sort) use ($builder) {
-            $field = $sort['id'];
-            $direction = $sort['desc'] ? 'DESC' : 'ASC';
+            $field = $sort['id'] === 'refund_amount' ? 'surplus_credit' : $sort['id'];
+            $direction = filter_var($sort['desc'], FILTER_VALIDATE_BOOLEAN) ? 'DESC' : 'ASC';
             $builder->orderBy($field, $direction);
         });
     }
@@ -233,11 +255,12 @@ class OrderController extends Controller
             $order->trade_no = Helper::guid();
             $order->total_amount = $request->input('total_amount');
 
-            if (PlanService::getPeriodKey((string) $order->period) === Plan::PERIOD_RESET_TRAFFIC) {
+            $hasActivePlan = $user->plan_id !== null && ($user->expired_at === null || $user->expired_at > time());
+            if ($order->period === Plan::PERIOD_RESET_TRAFFIC) {
                 $order->type = Order::TYPE_RESET_TRAFFIC;
-            } else if ($user->plan_id !== NULL && $order->plan_id !== $user->plan_id) {
+            } else if ($hasActivePlan && $order->plan_id != $user->plan_id) {
                 $order->type = Order::TYPE_UPGRADE;
-            } else if ($user->expired_at > time() && $order->plan_id == $user->plan_id) {
+            } else if ($hasActivePlan) {
                 $order->type = Order::TYPE_RENEWAL;
             } else {
                 $order->type = Order::TYPE_NEW_PURCHASE;

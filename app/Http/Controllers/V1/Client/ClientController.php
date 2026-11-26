@@ -27,6 +27,7 @@ class ClientController extends Controller
         'trojan' => '[trojan]',
         'tuic' => '[tuic]',
         'socks' => '[socks]',
+        'naive' => '[naive]',
         'anytls' => '[anytls]'
     ];
 
@@ -154,10 +155,9 @@ class ClientController extends Controller
 
         if (preg_match('/([a-zA-Z0-9\-_]+)[\/\s]+(v?[0-9]+(?:\.[0-9]+){0,2})/', $flag, $matches)) {
             $potentialName = strtolower($matches[1]);
-            $clientVersion = preg_replace('/^v/', '', $matches[2]);
-
             if (in_array($potentialName, app('protocols.flags'))) {
                 $clientName = $potentialName;
+                $clientVersion = preg_replace('/^v/', '', $matches[2]);
             }
         }
 
@@ -177,17 +177,11 @@ class ClientController extends Controller
             }
         }
 
-        if (!$clientVersion) {
-            if (preg_match('/\/v?(\d+(?:\.\d+){0,2})/', $flag, $matches)) {
+        if ($clientName && !$clientVersion) {
+            $product = $clientName === 'surge' ? 'surge(?:[ _-]*mac)?' : preg_quote($clientName, '/');
+            if (preg_match('/\b' . $product . '[\/\s]+v?(\d+(?:\.\d+){0,2})/i', $request->header('User-Agent', ''), $matches)) {
                 $clientVersion = $matches[1];
             }
-        }
-
-        // A managed Surge URL pins the output format with flag=surge. Its
-        // actual version still comes from the client's User-Agent on refresh.
-        if ($clientName === 'surge' && !$clientVersion
-            && preg_match('/surge(?:[ _-]*mac)?[\/\s]+v?(\d+(?:\.\d+){0,2})/i', $request->header('User-Agent', ''), $matches)) {
-            $clientVersion = $matches[1];
         }
 
         return [

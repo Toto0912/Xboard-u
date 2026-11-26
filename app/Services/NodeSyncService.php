@@ -26,7 +26,10 @@ class NodeSyncService
      */
     public static function isNodeOnline(int $nodeId): bool
     {
-        return (bool) Cache::get("node_ws_alive:{$nodeId}");
+        $nodeKey = "node_ws_alive:{$nodeId}";
+        $workerKey = \App\WebSocket\NodeWorker::HEARTBEAT_CACHE_KEY;
+        $state = Cache::many([$workerKey, $nodeKey]);
+        return !empty($state[$workerKey]) && !empty($state[$nodeKey]);
     }
 
     /**
@@ -37,7 +40,7 @@ class NodeSyncService
         if (!self::isNodeOnline($nodeId))
             return;
 
-        $node = Server::find($nodeId);
+        $node = Server::query()->useWritePdo()->find($nodeId);
         if (!$node)
             return;
 
@@ -47,13 +50,13 @@ class NodeSyncService
     /**
      * Push all users to all nodes in the group
      */
-    public static function notifyUsersUpdatedByGroup(int $groupId): int
+    public static function notifyUsersUpdatedByGroup(int $groupId, bool $retryOnFailure = false): int
     {
         $servers = Server::whereInGroup($groupId)->useWritePdo()->get();
 
         $notified = 0;
         foreach ($servers as $server) {
-            if (self::pushNodeUsers($server)) $notified++;
+            if (self::pushNodeUsers($server, $retryOnFailure)) $notified++;
         }
         return $notified;
     }
@@ -71,10 +74,10 @@ class NodeSyncService
         }
     }
 
-    public static function pushNodeUsers(Server $server): bool
+    public static function pushNodeUsers(Server $server, bool $retryOnFailure = false): bool
     {
         if (!self::isNodeOnline($server->id)) return false;
-        self::push($server->id, 'sync.users', ['users' => ServerService::getAvailableUsers($server)->all()]);
+        self::push($server->id, 'sync.users', ['users' => ServerService::getAvailableUsers($server)->all()], $retryOnFailure);
         return true;
     }
 
@@ -121,7 +124,7 @@ class NodeSyncService
     /**
      * Push removal for multiple users from a specific group's online nodes.
      */
-    public static function notifyUsersRemovedFromGroup(array $userIds, int $groupId): int
+    public static function notifyUsersRemovedFromGroup(array $userIds, int $groupId, bool $retryOnFailure = false): int
     {
         $normalizedIds = array_values(array_unique(array_filter(
             array_map('intval', $userIds),
@@ -131,7 +134,7 @@ class NodeSyncService
             return 0;
         }
         if (HookManager::hasHook('server.users.get')) {
-            return self::notifyUsersUpdatedByGroup($groupId);
+            return self::notifyUsersUpdatedByGroup($groupId, $retryOnFailure);
         }
 
         $servers = Server::whereInGroup($groupId)->useWritePdo()->get();
@@ -146,7 +149,7 @@ class NodeSyncService
                 self::push($server->id, 'sync.user.delta', [
                     'action' => 'remove',
                     'users' => array_map(fn (int $id): array => ['id' => $id], $chunk),
-                ]);
+                ], $retryOnFailure);
             }
             $notifiedNodes++;
         }
@@ -205,15 +208,17 @@ class NodeSyncService
     /**
      * Publish a push command to Redis — picked up by the Workerman WS server
      */
-    public static function push(int $nodeId, string $event, array $data): void
+    public static function push(int $nodeId, string $event, array $data, bool $retryOnFailure = false): void
     {
         try {
-            Redis::publish('node:push', json_encode([
+            $result = Redis::publish('node:push', json_encode([
                 'node_id' => $nodeId,
                 'event' => $event,
                 'data' => $data,
-            ]));
+            ], JSON_THROW_ON_ERROR));
+            if ($result === false) throw new \RuntimeException('Redis did not accept the notification');
         } catch (\Throwable $e) {
+            if ($retryOnFailure) throw $e;
             Log::warning("[NodePush] Redis publish failed: {$e->getMessage()}", [
                 'node_id' => $nodeId,
                 'event' => $event,

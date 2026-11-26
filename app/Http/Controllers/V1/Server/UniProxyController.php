@@ -23,19 +23,13 @@ class UniProxyController extends Controller
 
     public function user(Request $request)
     {
-        ini_set('memory_limit', -1);
         $node = $this->getNodeInfo($request);
 
         ServerService::touchNode($node);
 
         $response['users'] = ServerService::getAvailableUsers($node);
 
-        $eTag = sha1(json_encode($response));
-        if (str_contains($request->header('If-None-Match', ''), $eTag)) {
-            return response(null, 304);
-        }
-
-        return response($response)->header('ETag', "\"{$eTag}\"");
+        return $this->etagResponse($request, $response);
     }
 
     public function push(Request $request)
@@ -62,11 +56,17 @@ class UniProxyController extends Controller
             'pull_interval' => (int) admin_setting('server_pull_interval', 60)
         ];
 
-        $eTag = sha1(json_encode($response));
+        return $this->etagResponse($request, $response);
+    }
+
+    private function etagResponse(Request $request, array $data)
+    {
+        $response = response($data);
+        $eTag = sha1($response->getContent());
         if (str_contains($request->header('If-None-Match', ''), $eTag)) {
             return response(null, 304);
         }
-        return response($response)->header('ETag', "\"{$eTag}\"");
+        return $response->header('ETag', "\"{$eTag}\"");
     }
 
     public function alivelist(Request $request): JsonResponse

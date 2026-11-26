@@ -114,7 +114,7 @@ class OrderService
             $orderService->setVipDiscount($user);
             $orderService->setOrderType($user);
 
-            if ($user->balance && $order->total_amount > 0) {
+            if ($user->balance > 0 && $order->total_amount > 0) {
                 $orderService->handleUserBalance($user, $userService);
             }
 
@@ -274,11 +274,8 @@ class OrderService
 
         if (!$isCommission)
             return;
-        if ($inviter->commission_rate) {
-            $order->commission_balance = $order->total_amount * ($inviter->commission_rate / 100);
-        } else {
-            $order->commission_balance = $order->total_amount * (admin_setting('invite_commission', 10) / 100);
-        }
+        $rate = $inviter->effectiveCommissionRate();
+        $order->commission_balance = (int) round($order->total_amount * $rate / 100, 0, PHP_ROUND_HALF_UP);
     }
 
     private function haveValidOrder(User $user): Order|null
@@ -484,7 +481,7 @@ class OrderService
                 if (!$order->save()) {
                     throw new \RuntimeException('Failed to save order status.');
                 }
-                if ($order->balance_amount) {
+                if ($order->balance_amount > 0) {
                     $userService = new UserService();
                     if (!$userService->addBalance($order->user_id, $order->balance_amount)) {
                         throw new \RuntimeException('Failed to add balance.');

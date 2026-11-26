@@ -55,7 +55,7 @@ class PlanSave extends FormRequest
     {
         $prices = $this->input('prices', []);
         
-        if (empty($prices)) {
+        if (!is_array($prices) || !$prices) {
             return;
         }
 
@@ -95,25 +95,14 @@ class PlanSave extends FormRequest
     /**
      * 处理验证后的数据
      */
-    protected function passedValidation(): void
+    public function planAttributes(): array
     {
-        // 清理和格式化价格数据
-        $prices = $this->input('prices', []);
-        $cleanedPrices = [];
-
-        foreach ($prices as $period => $price) {
-            // 只保留有效的正数价格
-            if ($price !== null && $price !== '' && is_numeric($price)) {
-                $numericPrice = (float) $price;
-                if ($numericPrice > 0) {
-                    // 转换为浮点数并保留两位小数
-                    $cleanedPrices[$period] = round($numericPrice, 2);
-                }
-            }
+        $attributes = $this->validated();
+        if (array_key_exists('prices', $attributes)) {
+            $prices = array_filter($attributes['prices'] ?? [], fn ($price, $period) => Plan::isSalePrice($period, $price), ARRAY_FILTER_USE_BOTH);
+            $attributes['prices'] = array_map(fn ($price) => round((float) $price, 2), $prices);
         }
-
-        // 更新请求中的价格数据
-        $this->merge(['prices' => $cleanedPrices]);
+        return $attributes;
     }
 
     /**

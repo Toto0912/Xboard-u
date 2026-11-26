@@ -618,6 +618,9 @@ export function ProtocolFields({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {settings.cipher === '2022-blake3-chacha20-poly1305' && (
+                    <SelectItem value="2022-blake3-chacha20-poly1305" disabled>2022-blake3-chacha20-poly1305 (single-user)</SelectItem>
+                  )}
                   {SHADOWSOCKS_CIPHERS.map((c) => (
                     <SelectItem key={c} value={c} className="font-mono text-xs">
                       {c}
@@ -791,7 +794,6 @@ export function ProtocolFields({
               onChange={(hy2) => patch({ hy2_settings: hy2 })}
               onDraftInvalidChange={(inv) => {
                 onDraftInvalidChange?.(inv);
-                patch({ hy2_draft_invalid: inv });
               }}
             />
           )}

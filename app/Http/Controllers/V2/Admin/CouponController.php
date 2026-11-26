@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\V2\Admin;
 
-use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CouponGenerate;
 use App\Http\Requests\Admin\CouponSave;
@@ -15,6 +14,7 @@ class CouponController extends Controller
 {
     private function applyFiltersAndSorts(Request $request, $builder)
     {
+        \App\Support\AdminListQuery::validate($request, 'id name code type value limit_use limit_use_with_user started_at ended_at created_at updated_at');
         if ($request->has('filter')) {
             collect($request->input('filter'))->each(function ($filter) use ($builder) {
                 $key = $filter['id'];
@@ -32,7 +32,7 @@ class CouponController extends Controller
         if ($request->has('sort')) {
             collect($request->input('sort'))->each(function ($sort) use ($builder) {
                 $key = $sort['id'];
-                $value = $sort['desc'] ? 'DESC' : 'ASC';
+                $value = filter_var($sort['desc'], FILTER_VALIDATE_BOOLEAN) ? 'DESC' : 'ASC';
                 $builder->orderBy($key, $value);
             });
         }
@@ -59,13 +59,12 @@ class CouponController extends Controller
             'id.numeric' => '优惠券ID必须为数字'
         ]);
         try {
-            DB::beginTransaction();
             $coupon = Coupon::find($request->input('id'));
             if (!$coupon) {
-                throw new ApiException(400201, '优惠券不存在');
+                return $this->fail([400201, '优惠券不存在']);
             }
             $coupon->update($params);
-            DB::commit();
+            return $this->success(true);
         } catch (\Exception $e) {
             \Log::error($e);
             return $this->fail([500, '保存失败']);
@@ -94,8 +93,7 @@ class CouponController extends Controller
     public function generate(CouponGenerate $request)
     {
         if ($request->input('generate_count')) {
-            $this->multiGenerate($request);
-            return;
+            return $this->multiGenerate($request);
         }
 
         $params = $request->validated();
@@ -130,39 +128,36 @@ class CouponController extends Controller
             array_push($coupons, $coupon);
         }
         try {
-            DB::beginTransaction();
-            if (
-                !Coupon::insert(array_map(function ($item) use ($coupon) {
-                    // format data
-                    if (isset($item['limit_plan_ids']) && is_array($item['limit_plan_ids'])) {
-                        $item['limit_plan_ids'] = json_encode($coupon['limit_plan_ids']);
-                    }
-                    if (isset($item['limit_period']) && is_array($item['limit_period'])) {
-                        $item['limit_period'] = json_encode($coupon['limit_period']);
-                    }
-                    return $item;
-                }, $coupons))
-            ) {
-                throw new \Exception();
-            }
-            DB::commit();
+            DB::transaction(function () use ($coupons) {
+                foreach (array_chunk($coupons, 50) as $chunk) {
+                    Coupon::insert(array_map(function ($item) {
+                        foreach (['limit_plan_ids', 'limit_period'] as $key) {
+                            if (isset($item[$key])) {
+                                $item[$key] = json_encode($item[$key], JSON_THROW_ON_ERROR);
+                            }
+                        }
+                        return $item;
+                    }, $chunk));
+                }
+            });
         } catch (\Exception $e) {
-            DB::rollBack();
             return $this->fail([500, '生成失败']);
         }
 
-        $data = "名称,类型,金额或比例,开始时间,结束时间,可用次数,可用于订阅,券码,生成时间\r\n";
-        foreach ($coupons as $coupon) {
-            $type = ['', '金额', '比例'][$coupon['type']];
-            $value = ['', ($coupon['value'] / 100), $coupon['value']][$coupon['type']];
-            $startTime = date('Y-m-d H:i:s', $coupon['started_at']);
-            $endTime = date('Y-m-d H:i:s', $coupon['ended_at']);
-            $limitUse = $coupon['limit_use'] ?? '不限制';
-            $createTime = date('Y-m-d H:i:s', $coupon['created_at']);
-            $limitPlanIds = isset($coupon['limit_plan_ids']) ? implode("/", $coupon['limit_plan_ids']) : '不限制';
-            $data .= "{$coupon['name']},{$type},{$value},{$startTime},{$endTime},{$limitUse},{$limitPlanIds},{$coupon['code']},{$createTime}\r\n";
-        }
-        echo $data;
+        return response()->streamDownload(function () use ($coupons) {
+            $stream = fopen('php://output', 'w');
+            fputcsv($stream, ['名称', '类型', '金额或比例', '开始时间', '结束时间', '可用次数', '可用于订阅', '券码', '生成时间'], ',', '"', '', "\r\n");
+            foreach ($coupons as $coupon) {
+                fputcsv($stream, [
+                    $coupon['name'], $coupon['type'] == 1 ? '金额' : '比例',
+                    $coupon['type'] == 1 ? $coupon['value'] / 100 : $coupon['value'],
+                    date('Y-m-d H:i:s', $coupon['started_at']), date('Y-m-d H:i:s', $coupon['ended_at']),
+                    $coupon['limit_use'] ?? '不限制', isset($coupon['limit_plan_ids']) ? implode('/', $coupon['limit_plan_ids']) : '不限制',
+                    $coupon['code'], date('Y-m-d H:i:s', $coupon['created_at']),
+                ], ',', '"', '', "\r\n");
+            }
+            fclose($stream);
+        }, 'coupons.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     public function drop(Request $request)

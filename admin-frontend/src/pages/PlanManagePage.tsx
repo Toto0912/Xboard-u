@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getPanelSettings } from '@/lib/settings';
 import {
   dropPlan,
   fetchPlans,
@@ -492,7 +493,7 @@ export default function PlanManagePage() {
                         <div className="flex flex-wrap gap-1">
                           {activePrices.slice(0, 3).map((k) => (
                             <Badge key={k} variant="secondary" className="font-mono text-[10px]">
-                              {t(`plan.periods.${k}`)}: ¥{Number(plan.prices?.[k]).toFixed(2)}
+                              {t(`plan.periods.${k}`)}: {getPanelSettings().currency_symbol}{Number(plan.prices?.[k]).toFixed(2)}
                             </Badge>
                           ))}
                           {activePrices.length > 3 && (
@@ -700,7 +701,7 @@ export default function PlanManagePage() {
                       </Label>
                       <div className="relative flex items-center">
                         <span className="pointer-events-none absolute left-3 text-xs text-muted-foreground">
-                          ¥
+                          {getPanelSettings().currency_symbol}
                         </span>
                         <Input
                           type="number"

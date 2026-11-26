@@ -385,6 +385,17 @@ class Server extends Model
         if (isset($configs['xray_fallback'])) {
             $settings['xray_fallback'] = ServerFallback::forNode($type, $settings);
         }
+        if ($type === self::TYPE_ANYTLS) {
+            $alpn = data_get($settings, 'tls.alpn') ?? ($settings['alpn'] ?? null);
+            if (is_string($alpn)) {
+                $alpn = array_map('trim', explode(',', $alpn));
+            }
+            if (is_array($alpn) && $alpn) {
+                $settings['tls'] = is_array($settings['tls'] ?? null) ? $settings['tls'] : [];
+                $settings['tls']['alpn'] = array_values(array_filter($alpn, fn ($value) => is_string($value) && $value !== ''));
+                $configs['tls']['fields']['alpn'] = ['type' => 'array', 'default' => []];
+            }
+        }
         $configs['target_kernel'] = ['type' => 'string', 'default' => null];
         if ($type === self::TYPE_HYSTERIA) {
             $settings = \App\Support\Hysteria2Settings::normalize($settings);
@@ -663,7 +674,9 @@ class Server extends Model
         $now = ($at ?? now())->format('H:i');
         $ranges = $this->rate_time_ranges ?? [];
         $matchedRange = collect($ranges)
-            ->first(fn($range) => $now >= $range['start'] && $now <= $range['end']);
+            ->first(fn($range) => $range['start'] <= $range['end']
+                ? $now >= $range['start'] && $now <= $range['end']
+                : $now >= $range['start'] || $now <= $range['end']);
         
         return $matchedRange ? (float) $matchedRange['rate'] : (float) $this->rate;
     }

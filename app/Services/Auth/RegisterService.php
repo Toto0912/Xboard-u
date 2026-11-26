@@ -90,10 +90,14 @@ class RegisterService
                 return [false, [422, __('Email verification code cannot be empty')]];
             }
 
-            $cachedEmailCode = Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $emailIdentity));
-            if ($cachedEmailCode === null || !hash_equals((string) $cachedEmailCode, (string) $emailCode)) {
+            $attemptKey = CacheKey::get('EMAIL_VERIFY_CODE', $emailIdentity) . ':register';
+            if (!AttemptBudget::reserve($attemptKey, 3, 300)) {
+                return [false, [429, __('Sending frequently, please try again later')]];
+            }
+            if (!EmailChallenge::matches($emailIdentity, 'register', (string) $emailCode)) {
                 return [false, [400, __('Incorrect email verification code')]];
             }
+            AttemptBudget::release($attemptKey);
         }
 
         // 检查邮箱是否存在

@@ -5,7 +5,6 @@ namespace App\Services\Auth;
 use App\Jobs\SendEmailJob;
 use App\Models\User;
 use App\Utils\CacheKey;
-use App\Utils\Helper;
 use Illuminate\Support\Facades\Cache;
 
 class MailLinkService
@@ -30,16 +29,14 @@ class MailLinkService
         }
 
         $user = User::byEmail($email)->first();
-        if (!$user) {
+        if (!$user || $user->banned) {
             return [true, true]; // 成功但用户不存在，保护用户隐私
         }
 
-        $code = Helper::guid();
-        $key = CacheKey::get('TEMP_TOKEN', $code);
-        Cache::put($key, $user->id, 300);
-        Cache::put(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $email), time(), 60);
-
-        $redirectUrl = '/#/login?verify=' . $code . '&redirect=' . ($redirect ? $redirect : 'dashboard');
+        if (!Cache::add(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $email), time(), 60)) {
+            return [false, [429, __('Sending frequently, please try again later')]];
+        }
+        $redirectUrl = LoginTicket::loginPath(LoginTicket::issue($user, 300), $redirect);
         if (admin_setting('app_url')) {
             $link = admin_setting('app_url') . $redirectUrl;
         } else {
@@ -82,21 +79,6 @@ class MailLinkService
      */
     public function handleTokenLogin(string $token): ?int
     {
-        $key = CacheKey::get('TEMP_TOKEN', $token);
-        $userId = Cache::get($key);
-
-        if (!$userId) {
-            return null;
-        }
-
-        $user = User::find($userId);
-
-        if (!$user || $user->banned) {
-            return null;
-        }
-
-        Cache::forget($key);
-
-        return $userId;
+        return LoginTicket::consume($token)?->getKey();
     }
 }

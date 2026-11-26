@@ -23,6 +23,9 @@ class Setting extends Model
         if ($rawValue === null) {
             return null;
         }
+        if (($this->attributes['name'] ?? null) === 'server_token') {
+            return (string) $rawValue;
+        }
 
         // 如果已经是数组，直接返回
         if (is_array($rawValue)) {

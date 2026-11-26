@@ -117,6 +117,18 @@ class ServerHandshakeTest extends TestCase
         $response->assertStatus(422);
     }
 
+    public function test_machine_handshake_and_report_reject_nonpositive_and_malformed_node_ids(): void
+    {
+        $machine = ServerMachine::create(['name' => 'binding', 'token' => 'token', 'is_active' => true]);
+        foreach (['handshake', 'report'] as $endpoint) {
+            foreach ([-1, 0, 'abc'] as $id) {
+                $this->postJson('/api/v2/server/' . $endpoint, [
+                    'machine_id' => $machine->id, 'token' => 'token', 'node_id' => $id,
+                ])->assertStatus(422)->assertJsonValidationErrors('node_id');
+            }
+        }
+    }
+
     private function makeServer(): Server
     {
         return Server::create([

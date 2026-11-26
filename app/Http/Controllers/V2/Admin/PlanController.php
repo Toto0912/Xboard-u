@@ -36,7 +36,7 @@ class PlanController extends Controller
 
     public function save(PlanSave $request)
     {
-        $params = $request->validated();
+        $params = $request->planAttributes();
         
         if ($request->input('id')) {
             try {

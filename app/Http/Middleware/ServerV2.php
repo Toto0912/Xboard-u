@@ -33,7 +33,7 @@ class ServerV2
             'token' => [
                 'string', 'required',
                 function ($attribute, $value, $fail) {
-                    if ($value !== admin_setting('server_token')) {
+                    if (!\App\Support\Setting::matchesNodeToken($value)) {
                         $fail("Invalid {$attribute}");
                     }
                 },
@@ -61,7 +61,7 @@ class ServerV2
         $request->validate([
             'machine_id' => 'required|integer',
             'token' => 'required|string',
-            'node_id' => $isHandshake ? 'nullable|integer' : 'required|integer',
+            'node_id' => $isHandshake ? 'nullable|integer|min:1' : 'required|integer|min:1',
         ]);
 
         $machine = ServerMachine::findWithToken((int) $request->input('machine_id'), $request->input('token'));

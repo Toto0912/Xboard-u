@@ -391,30 +391,32 @@ export default function ProfilePage() {
             </CardTitle>
             <CardDescription>{t('profile.sessionsDesc')}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {sessionsQuery.data!.map((sess) => (
-              <div
-                key={sess.id}
-                className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 px-3.5 py-2.5 text-xs"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-mono font-medium">{sess.name || `#${sess.id}`}</div>
-                  <div className="text-muted-foreground">
-                    {sess.last_used_at || sess.created_at || '—'}
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                  disabled={revokeSessionMutation.isPending}
-                  onClick={() => revokeSessionMutation.mutate(sess.id)}
+          <CardContent>
+            <div className="max-h-[min(20rem,50vh)] space-y-2 overflow-y-auto">
+              {sessionsQuery.data!.map((sess) => (
+                <div
+                  key={sess.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 px-3.5 py-2.5 text-xs"
                 >
-                  {t('profile.revokeSession')}
-                </Button>
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <div className="truncate font-mono font-medium">{sess.name || `#${sess.id}`}</div>
+                    <div className="text-muted-foreground">
+                      {sess.last_used_at || sess.created_at || '—'}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                    disabled={revokeSessionMutation.isPending}
+                    onClick={() => revokeSessionMutation.mutate(sess.id)}
+                  >
+                    {t('profile.revokeSession')}
+                  </Button>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

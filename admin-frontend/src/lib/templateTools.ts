@@ -1,6 +1,6 @@
 import { parseDocument } from 'yaml';
 
-export type TemplateToolKind = 'json' | 'yaml' | 'conf';
+export type TemplateToolKind = 'json' | 'json-array' | 'yaml' | 'conf';
 
 export type ValidationResult =
   | { ok: true }
@@ -80,17 +80,17 @@ export function getTemplateDiagnostics(
     ];
   }
 
-  if (kind === 'json') {
+  if (kind === 'json' || kind === 'json-array') {
     try {
       const parsed: unknown = JSON.parse(content);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) !== (kind === 'json-array')) {
         return [
           {
             startLineNumber: 1,
             startColumn: 1,
             endLineNumber: 1,
             endColumn: 2,
-            message: 'JSON root must be an object',
+            message: kind === 'json-array' ? 'JSON root must be an array' : 'JSON root must be an object',
           },
         ];
       }
@@ -212,10 +212,10 @@ export function formatTemplate(kind: TemplateToolKind, content: string): string 
     throw new Error('Template content is empty');
   }
 
-  if (kind === 'json') {
+  if (kind === 'json' || kind === 'json-array') {
     const parsed: unknown = JSON.parse(content);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('JSON root must be an object');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) !== (kind === 'json-array')) {
+      throw new Error(kind === 'json-array' ? 'JSON root must be an array' : 'JSON root must be an object');
     }
     return `${JSON.stringify(parsed, null, 2)}\n`;
   }

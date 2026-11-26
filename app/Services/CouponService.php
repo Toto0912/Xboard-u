@@ -14,10 +14,11 @@ class CouponService
     public $userId;
     public $period;
 
-    public function __construct($code)
+    public function __construct($code, bool $forUpdate = true)
     {
         $this->coupon = Coupon::where('code', $code)
-            ->lockForUpdate()
+            ->orderBy('id')
+            ->when($forUpdate, fn ($query) => $query->lockForUpdate())
             ->first();
     }
 

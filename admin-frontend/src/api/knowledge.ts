@@ -8,6 +8,7 @@ export const KNOWLEDGE_LANGUAGES = [
   { value: 'zh-CN', label: '简体中文' },
   { value: 'zh-TW', label: '繁體中文' },
   { value: 'ru-RU', label: 'Русский' },
+  { value: 'fa-IR', label: 'فارسی' },
 ] as const;
 
 export interface KnowledgeSummaryItem {

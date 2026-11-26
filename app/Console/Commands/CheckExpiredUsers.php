@@ -20,7 +20,7 @@ class CheckExpiredUsers extends Command
         $lastWatermark = Cache::get(self::WATERMARK_CACHE_KEY);
         $windowStart = is_numeric($lastWatermark) ? max(0, (int) $lastWatermark - 5) : ($now - 300);
 
-        $expiredUsers = User::toBase()
+        $expiredUsers = User::toBase()->useWritePdo()
             ->whereNotNull('expired_at')
             ->where('expired_at', '>', $windowStart)
             ->where('expired_at', '<=', $now)
@@ -36,7 +36,7 @@ class CheckExpiredUsers extends Command
             }
             $notifiedNodes += NodeSyncService::notifyUsersRemovedFromGroup(
                 $users->pluck('id')->all(),
-                (int) $groupId
+                (int) $groupId, true
             );
         }
 

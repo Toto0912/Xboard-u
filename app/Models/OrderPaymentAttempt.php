@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Exceptions\ApiException;
 use Illuminate\Database\Eloquent\Model;
 
 class OrderPaymentAttempt extends Model
@@ -14,6 +15,9 @@ class OrderPaymentAttempt extends Model
     // The caller holds the order lock. Identical quotes use the same merchant reference on retries.
     public static function quote(Order $order, Payment $payment, bool $supportsReferences, ?string $currency = null): self
     {
+        if ($payment->handling_fee_fixed < 0) {
+            throw new ApiException(__('Invalid payment handling fee'));
+        }
         $attempts = self::where('order_id', $order->id);
         if ($order->payment_id !== null && !(clone $attempts)->exists()) {
             self::create(['order_id' => $order->id, 'payment_id' => $order->payment_id, 'legacy_quote' => true,

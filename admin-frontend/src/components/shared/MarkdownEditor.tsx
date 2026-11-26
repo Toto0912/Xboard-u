@@ -1,3 +1,5 @@
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -28,153 +30,22 @@ interface MarkdownEditorProps {
   minHeight?: string;
 }
 
-function escapeHtml(raw: string): string {
-  return raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function sanitizeUrl(url: string): string {
-  const trimmed = url.trim();
-  if (/^(https?:|mailto:|\/)/i.test(trimmed)) {
-    return trimmed;
+export function renderMarkdownToHtml(markdown: string): string {
+  const parsed = marked.parse(markdown, { async: false, breaks: true, gfm: true });
+  const fragment = DOMPurify.sanitize(parsed, {
+    RETURN_DOM_FRAGMENT: true,
+    ALLOWED_TAGS: ['p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'del', 'blockquote', 'ul', 'ol', 'li', 'pre', 'code', 'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'start'],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    ALLOWED_URI_REGEXP: /^(?:https?:\/\/|mailto:|\/(?!\/)|#)/i,
+  });
+  for (const img of fragment.querySelectorAll('img[src]')) {
+    if (!/^(?:https?:\/\/|\/(?!\/))/i.test(img.getAttribute('src')!)) img.removeAttribute('src');
   }
-  return '#';
-}
-
-function formatInlineMarkdown(text: string): string {
-  let out = escapeHtml(text);
-  // Inline code first
-  const codeTokens: string[] = [];
-  out = out.replace(/`([^`]+)`/g, (_m, code) => {
-    const idx = codeTokens.length;
-    codeTokens.push(
-      `<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">${code}</code>`,
-    );
-    return `\u0000CODE${idx}\u0000`;
-  });
-
-  // Images ![alt](url)
-  out = out.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, url) => {
-    const safe = sanitizeUrl(url);
-    return `<img src="${safe}" alt="${alt}" class="my-2 max-h-64 rounded-md border object-contain" />`;
-  });
-
-  // Links [text](url)
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, url) => {
-    const safe = sanitizeUrl(url);
-    return `<a href="${safe}" target="_blank" rel="noopener noreferrer" class="text-primary underline underline-offset-2">${label}</a>`;
-  });
-
-  // Bold, italic, strikethrough
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-  out = out.replace(/\u0000CODE(\d+)\u0000/g, (_m, idx) => codeTokens[Number(idx)] ?? '');
-  return out;
-}
-
-function renderMarkdownToHtml(markdown: string): string {
-  if (!markdown.trim()) return '';
-
-  // Extract fenced code blocks first
-  const fenceTokens: string[] = [];
-  const withPlaceholders = markdown.replace(/```([\w-]*)\n([\s\S]*?)```/g, (_m, lang, code) => {
-    const idx = fenceTokens.length;
-    fenceTokens.push(
-      `<pre class="my-2 overflow-x-auto rounded-md border bg-muted/60 p-3 font-mono text-xs"><code class="language-${escapeHtml(lang)}">${escapeHtml(code.replace(/\n$/, ''))}</code></pre>`,
-    );
-    return `\n\u0000FENCE${idx}\u0000\n`;
-  });
-
-  const lines = withPlaceholders.split(/\r?\n/);
-  const html: string[] = [];
-  let inUl = false;
-  let inOl = false;
-
-  const closeLists = () => {
-    if (inUl) {
-      html.push('</ul>');
-      inUl = false;
-    }
-    if (inOl) {
-      html.push('</ol>');
-      inOl = false;
-    }
-  };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const fenceMatch = trimmed.match(/^\u0000FENCE(\d+)\u0000$/);
-    if (fenceMatch) {
-      closeLists();
-      html.push(fenceTokens[Number(fenceMatch[1])] ?? '');
-      continue;
-    }
-
-    if (!trimmed) {
-      closeLists();
-      continue;
-    }
-
-    const headingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
-    if (headingMatch) {
-      closeLists();
-      const level = headingMatch[1].length;
-      const cls =
-        level === 1
-          ? 'mt-3 mb-1.5 text-lg font-bold'
-          : level === 2
-            ? 'mt-2.5 mb-1 text-base font-semibold'
-            : 'mt-2 mb-1 text-sm font-semibold';
-      html.push(`<h${level} class="${cls}">${formatInlineMarkdown(headingMatch[2])}</h${level}>`);
-      continue;
-    }
-
-    if (/^>\s+/.test(trimmed)) {
-      closeLists();
-      html.push(
-        `<blockquote class="my-2 border-l-2 border-primary/60 pl-3 text-muted-foreground italic">${formatInlineMarkdown(trimmed.replace(/^>\s+/, ''))}</blockquote>`,
-      );
-      continue;
-    }
-
-    if (/^[-*+]\s+/.test(trimmed)) {
-      if (inOl) {
-        html.push('</ol>');
-        inOl = false;
-      }
-      if (!inUl) {
-        html.push('<ul class="my-1.5 list-disc space-y-1 pl-5">');
-        inUl = true;
-      }
-      html.push(`<li>${formatInlineMarkdown(trimmed.replace(/^[-*+]\s+/, ''))}</li>`);
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(trimmed)) {
-      if (inUl) {
-        html.push('</ul>');
-        inUl = false;
-      }
-      if (!inOl) {
-        html.push('<ol class="my-1.5 list-decimal space-y-1 pl-5">');
-        inOl = true;
-      }
-      html.push(`<li>${formatInlineMarkdown(trimmed.replace(/^\d+\.\s+/, ''))}</li>`);
-      continue;
-    }
-
-    closeLists();
-    html.push(`<p class="my-1.5 leading-relaxed">${formatInlineMarkdown(trimmed)}</p>`);
-  }
-
-  closeLists();
-  return html.join('\n');
+  const container = document.createElement('div');
+  container.append(fragment);
+  return container.innerHTML;
 }
 
 export function MarkdownEditor({
@@ -320,7 +191,7 @@ export function MarkdownEditor({
         {mode !== 'edit' && (
           <div className={`${minHeight} max-h-[380px] overflow-y-auto p-3 text-sm text-foreground`}>
             {renderedHtml ? (
-              <div dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+              <div className="space-y-2 [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_h1]:text-lg [&_h2]:text-base [&_h3]:font-semibold [&_img]:max-h-64 [&_ol]:list-decimal [&_ol]:pl-5 [&_pre]:overflow-x-auto [&_pre]:bg-muted [&_pre]:p-3 [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
             ) : (
               <p className="text-xs text-muted-foreground">{t('common.markdown.emptyPreview')}</p>
             )}

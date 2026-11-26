@@ -31,6 +31,7 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import {
   dropServerMachine,
   fetchServerMachines,
@@ -250,15 +251,6 @@ export default function ServerMachinePage() {
       void queryClient.invalidateQueries({ queryKey: ['machine-token', tokenMachine?.id] });
     },
   });
-
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
-  };
 
   const openCreate = () => {
     setEditing(null);

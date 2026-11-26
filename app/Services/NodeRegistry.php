@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Workerman\Connection\TcpConnection;
 
 /**
@@ -18,10 +19,15 @@ class NodeRegistry
 
     public static function add(int $nodeId, TcpConnection $conn): void
     {
-        if (isset(self::$connections[$nodeId]) && self::$connections[$nodeId] !== $conn) {
-            self::$connections[$nodeId]->close();
-        }
+        $previous = self::$connections[$nodeId] ?? null;
         self::$connections[$nodeId] = $conn;
+        if ($previous && $previous !== $conn) {
+            if (empty($previous->machineId)) {
+                $previous->close();
+            } else {
+                $previous->machineNodeIds = array_values(array_diff($previous->machineNodeIds ?? [], [$nodeId]));
+            }
+        }
     }
 
     public static function addMachine(int $machineId, TcpConnection $conn): void
@@ -68,7 +74,7 @@ class NodeRegistry
     public static function send(int $nodeId, string $event, array $data): bool
     {
         $conn = self::get($nodeId);
-        if (!$conn) {
+        if (!$conn || (isset($conn->wsOwner) && Cache::get("node_ws_alive:{$nodeId}") !== $conn->wsOwner)) {
             return false;
         }
 
@@ -117,7 +123,7 @@ class NodeRegistry
     public static function sendMachine(int $machineId, string $event, array $data): bool
     {
         $conn = self::getMachine($machineId);
-        if (!$conn) {
+        if (!$conn || (isset($conn->wsOwner) && Cache::get("machine_ws_owner:{$machineId}") !== $conn->wsOwner)) {
             return false;
         }
 

@@ -21,6 +21,7 @@ class FilteredUserSyncTest extends TestCase
     {
         $node = Server::withoutEvents(fn () => Server::create(['name' => 'filtered', 'group_ids' => [2],
             'type' => 'vless', 'rate' => 1, 'host' => 'example.test', 'port' => 443, 'server_port' => 443]));
+        Cache::put(\App\WebSocket\NodeWorker::HEARTBEAT_CACHE_KEY, time(), 30);
         if ($online) Cache::put("node_ws_alive:{$node->id}", true, 120);
         return $node;
     }

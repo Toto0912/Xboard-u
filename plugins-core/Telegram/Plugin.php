@@ -114,7 +114,7 @@ class Plugin extends AbstractPlugin
       $this->registerTelegramCommand($command, [$this, $config['handler']]);
     }
 
-    $this->registerReplyHandler('/(📮.*?工单提醒.*?#?|工单ID: ?)(\\d+)/', [$this, 'handleTicketReply']);
+    $this->registerReplyHandler('/^(📮[ \t]+\*?工单提醒\*?[ \t]+#|工单ID: ?)(\d+)(?:\r?\n|$)/u', [$this, 'handleTicketReply']);
   }
 
   public function registerTelegramCommand(string $command, callable $handler): void
@@ -386,11 +386,17 @@ class Plugin extends AbstractPlugin
 
   public function handleTicketReply(object $msg, array $matches): void
   {
+    if (empty($msg->is_private) || empty($msg->reply_from_bot)) {
+      return;
+    }
     $user = $this->getBoundUser($msg);
     if (!$user) {
       return;
     }
 
+    if ($user->banned || (!$user->is_staff && !$user->is_admin)) {
+      return;
+    }
     if (!isset($matches[2]) || !is_numeric($matches[2])) {
       Log::warning('Telegram 工单回复正则未匹配到工单ID', ['matches' => $matches, 'msg' => $msg]);
       $this->sendMessage($msg, '未能识别工单ID，请直接回复工单提醒消息。');

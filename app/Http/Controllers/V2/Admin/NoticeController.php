@@ -36,7 +36,9 @@ class NoticeController extends Controller
             }
         } else {
             try {
-                Notice::find($request->input('id'))->update($data);
+                $notice = Notice::find($request->input('id'));
+                if (!$notice) return $this->fail([400202, '公告不存在']);
+                $notice->update($data);
             } catch (\Exception $e) {
                 return $this->fail([500, '保存失败']);
             }
@@ -45,6 +47,12 @@ class NoticeController extends Controller
     }
 
 
+
+    public function update(NoticeSave $request)
+    {
+        $request->validate(['id' => 'required|integer|min:1']);
+        return $this->save($request);
+    }
 
     public function show(Request $request)
     {

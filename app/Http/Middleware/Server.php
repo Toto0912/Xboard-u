@@ -19,15 +19,18 @@ class Server
             'token' => [
                 'string', 'required',
                 function ($attribute, $value, $fail) {
-                    if ($value !== admin_setting('server_token')) {
+                    if (!\App\Support\Setting::matchesNodeToken($value)) {
                         $fail("Invalid {$attribute}");
                     }
                 },
             ],
-            'node_id' => 'required',
+            'node_id' => ['required', static function ($key, $value, $fail) {
+                if (!is_int($value) && !is_string($value)) $fail('Invalid node identifier');
+            }],
             'node_type' => [
                 'nullable',
                 function ($attribute, $value, $fail) use ($request) {
+                    if (!is_string($value)) { $fail('Invalid node type specified'); return; }
                     if ($value === 'v2node') {
                         $value = null;
                     }
@@ -47,6 +50,11 @@ class Server
             $normalizedNodeType
         );
         if (!$serverInfo) {
+            if ($normalizedNodeType === null || !ServerService::getServer($request->input('node_id'))) {
+                return response()->json(['message' => 'Node binding removed'], 410, [
+                    'X-Xboard-Node-State' => 'revoked', 'Cache-Control' => 'no-store',
+                ]);
+            }
             throw new ApiException('Server does not exist');
         }
 

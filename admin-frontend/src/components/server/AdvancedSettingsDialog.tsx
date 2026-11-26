@@ -169,6 +169,7 @@ export function AdvancedSettingsDialog({
   );
 
   const handleToggleCdn = (enabled: boolean) => {
+    if (!enabled) setServerDraftInvalid(false);
     if (enabled && !localCdn.server) {
       setLocalCdn({
         enabled: true,
@@ -206,7 +207,7 @@ export function AdvancedSettingsDialog({
   };
 
   const handleSave = () => {
-    if (serverDraftInvalid) {
+    if (localCdn.enabled && serverDraftInvalid) {
       toast.error(t('serverNode.fixDraftErrorsFirst'));
       return;
     }
@@ -773,7 +774,7 @@ export function AdvancedSettingsDialog({
                   setOutboundsError(null);
                 }}
                 language="json"
-                showJsonTools
+                templateTools="json-array"
                 height="280px"
               />
               {outboundsError && <p className="text-xs text-destructive">{outboundsError}</p>}
@@ -866,7 +867,7 @@ export function AdvancedSettingsDialog({
                   setRoutesError(null);
                 }}
                 language="json"
-                showJsonTools
+                templateTools="json-array"
                 height="260px"
               />
               {routesError && <p className="text-xs text-destructive">{routesError}</p>}

@@ -69,7 +69,7 @@ class PaymentController extends Controller
             'payment' => 'required',
             'config' => 'required',
             'notify_domain' => 'nullable|url',
-            'handling_fee_fixed' => 'nullable|integer',
+            'handling_fee_fixed' => 'nullable|integer|min:0',
             'handling_fee_percent' => 'nullable|numeric|between:0,100'
         ], [
             'name.required' => '显示名称不能为空',

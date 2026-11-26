@@ -291,9 +291,20 @@ final class ServerTransport
             return $settings;
         }
         $params = &$settings['network_settings'];
-        if (($settings['network'] ?? null) === 'ws' && !empty($params['host'])
-            && (!isset($params['headers']) || is_array($params['headers'])) && !isset($params['headers']['Host'])) {
-            $params['headers']['Host'] = $params['host'];
+        if ($settings['network'] === 'ws' && (!isset($params['headers']) || is_array($params['headers']))) {
+            $headers = $params['headers'] ?? [];
+            $host = $headers['Host'] ?? null;
+            foreach ($headers as $name => $value) {
+                if (strcasecmp((string) $name, 'Host') === 0) {
+                    $host ??= $value;
+                    unset($headers[$name]);
+                }
+            }
+            $host ??= $params['host'] ?? null;
+            if ($host !== null) {
+                $headers['Host'] = $host;
+                $params['headers'] = $headers;
+            }
         }
         if (($settings['network'] ?? null) === 'grpc' && !isset($params['serviceName']) && isset($params['service_name'])) {
             $params['serviceName'] = $params['service_name'];

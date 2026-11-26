@@ -220,6 +220,7 @@ class UserController extends Controller
 
     public function getQuickLoginUrl(Request $request)
     {
+        $request->validate(['redirect' => 'nullable|string|max:2048']);
         $user = $request->user();
 
         $url = $this->loginService->generateQuickLoginUrl($user, $request->input('redirect'));

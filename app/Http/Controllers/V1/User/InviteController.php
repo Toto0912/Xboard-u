@@ -44,19 +44,16 @@ class InviteController extends Controller
 
     public function fetch(Request $request)
     {
-        $commission_rate = admin_setting('invite_commission', 10);
-        $user = User::find($request->user()->id)
-                ->load(['codes' => fn($query) => $query->where('status', 0)]);
-        if ($user->commission_rate) {
-            $commission_rate = $user->commission_rate;
-        }
-        $uncheck_commission_balance = (int)Order::where('status', 3)
+        $user = User::findOrFail($request->user()->id)
+            ->load(['codes' => fn ($query) => $query->where('status', 0)]);
+        $firstLevel = admin_setting('commission_distribution_enable', 0)
+            ? (int) admin_setting('commission_distribution_l1') : 100;
+        $pendingCommission = Order::whereIn('status', Order::COMMISSION_ELIGIBLE_STATUSES)
             ->where('commission_status', 0)
             ->where('invite_user_id', $user->id)
-            ->sum('commission_balance');
-        if (admin_setting('commission_distribution_enable', 0)) {
-            $uncheck_commission_balance = $uncheck_commission_balance * (admin_setting('commission_distribution_l1') / 100);
-        }
+            // Settlement rounds each order's cumulative first-level share to whole cents.
+            ->selectRaw('SUM(ROUND(1.0 * commission_balance * ? / 100)) AS pending', [$firstLevel])
+            ->value('pending');
         $stat = [
             //已注册用户数
             (int)User::where('invite_user_id', $user->id)->count(),
@@ -64,9 +61,9 @@ class InviteController extends Controller
             (int)CommissionLog::where('invite_user_id', $user->id)
                 ->sum('get_amount'),
             //确认中的佣金
-            $uncheck_commission_balance,
+            (int) $pendingCommission,
             //佣金比例
-            (int)$commission_rate,
+            $user->effectiveCommissionRate(),
             //可用佣金
             (int)$user->commission_balance
         ];

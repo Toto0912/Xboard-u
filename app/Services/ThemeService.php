@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\PackageFiles;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\View;
@@ -118,8 +119,7 @@ class ThemeService
                 throw new Exception('Theme config file not found');
             }
 
-            $zip->extractTo($tmpPath);
-            $zip->close();
+            PackageFiles::extract($zip, $tmpPath);
 
             $sourcePath = $tmpPath . '/' . rtrim(dirname($configEntry), '.');
             $configFile = $sourcePath . '/' . self::CONFIG_FILE;
@@ -129,11 +129,11 @@ class ThemeService
             }
 
             $config = json_decode(File::get($configFile), true);
-            if (empty($config['name'])) {
+            if (!is_string($config['name'] ?? null) || $config['name'] === '') {
                 throw new Exception('Theme name not configured');
             }
 
-            if (in_array($config['name'], self::SYSTEM_THEMES)) {
+            if (in_array(strtolower($config['name']), array_map('strtolower', self::SYSTEM_THEMES), true)) {
                 throw new Exception('Cannot upload theme with same name as system theme');
             }
 
@@ -146,7 +146,7 @@ class ThemeService
                 File::makeDirectory($userThemePath, 0755, true);
             }
 
-            $targetPath = $userThemePath . $config['name'];
+            $targetPath = PackageFiles::directory($userThemePath, $config['name']);
             if (File::exists($targetPath)) {
                 $oldConfigFile = $targetPath . '/config.json';
                 if (!File::exists($oldConfigFile)) {
@@ -156,9 +156,8 @@ class ThemeService
                 $oldVersion = $oldConfig['version'] ?? '0.0.0';
                 $newVersion = $config['version'] ?? '0.0.0';
                 if (version_compare($newVersion, $oldVersion, '>')) {
+                    PackageFiles::replace($sourcePath, $targetPath);
                     $this->cleanupThemeFiles($config['name']);
-                    File::deleteDirectory($targetPath);
-                    File::copyDirectory($sourcePath, $targetPath);
                     // 更新主题时保留用户配置
                     $this->initConfig($config['name'], true);
                     return true;
@@ -167,7 +166,7 @@ class ThemeService
                 }
             }
 
-            File::copyDirectory($sourcePath, $targetPath);
+            PackageFiles::replace($sourcePath, $targetPath);
             $this->initConfig($config['name']);
 
             return true;
@@ -206,10 +205,7 @@ class ThemeService
                 $this->cleanupThemeFiles($currentTheme);
             }
 
-            $targetPath = public_path('theme/' . $theme);
-            if (!File::copyDirectory($themePath, $targetPath)) {
-                throw new Exception('Failed to copy theme files');
-            }
+            $this->publish($theme);
 
             admin_setting(['current_theme' => $theme]);
             return true;
@@ -223,10 +219,16 @@ class ThemeService
     /**
      * Delete theme
      */
+    public function publish(string $theme): void
+    {
+        $source = $this->getThemePath($theme) ?? throw new Exception('Theme not found');
+        PackageFiles::replace($source, PackageFiles::directory(public_path('theme'), $theme), true);
+    }
+
     public function delete(string $theme): bool
     {
         try {
-            if (in_array($theme, self::SYSTEM_THEMES)) {
+            if (in_array(strtolower($theme), array_map('strtolower', self::SYSTEM_THEMES), true)) {
                 throw new Exception('System theme cannot be deleted');
             }
 
@@ -234,7 +236,7 @@ class ThemeService
                 throw new Exception('Current theme cannot be deleted');
             }
 
-            $themePath = base_path(self::USER_THEME_DIR . $theme);
+            $themePath = PackageFiles::directory(base_path(self::USER_THEME_DIR), $theme);
             if (!File::exists($themePath)) {
                 throw new Exception('Theme not found');
             }
@@ -263,12 +265,12 @@ class ThemeService
      */
     public function getThemePath(string $theme): ?string
     {
-        $systemPath = base_path(self::SYSTEM_THEME_DIR . $theme);
+        $systemPath = PackageFiles::directory(base_path(self::SYSTEM_THEME_DIR), $theme);
         if (File::exists($systemPath)) {
             return $systemPath;
         }
 
-        $userPath = base_path(self::USER_THEME_DIR . $theme);
+        $userPath = PackageFiles::directory(base_path(self::USER_THEME_DIR), $theme);
         if (File::exists($userPath)) {
             return $userPath;
         }
@@ -341,7 +343,7 @@ class ThemeService
     public function cleanupThemeFiles(string $theme): void
     {
         try {
-            $publicThemePath = public_path('theme/' . $theme);
+            $publicThemePath = PackageFiles::directory(public_path('theme'), $theme);
             if (File::exists($publicThemePath)) {
                 File::deleteDirectory($publicThemePath);
                 Log::info('Cleaned up public theme files', ['theme' => $theme, 'path' => $publicThemePath]);
@@ -372,17 +374,7 @@ class ThemeService
                 return false;
             }
 
-            $this->cleanupThemeFiles($currentTheme);
-
-            $themePath = $this->getThemePath($currentTheme);
-            if (!$themePath) {
-                throw new Exception('Current theme path not found');
-            }
-
-            $targetPath = public_path('theme/' . $currentTheme);
-            if (!File::copyDirectory($themePath, $targetPath)) {
-                throw new Exception('Failed to copy theme files');
-            }
+            $this->publish($currentTheme);
 
             Log::info('Refreshed current theme files', ['theme' => $currentTheme]);
             return true;

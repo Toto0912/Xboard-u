@@ -7,6 +7,7 @@ use App\Jobs\SendTelegramJob;
 use App\Models\User;
 use App\Services\Plugin\HookManager;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -17,7 +18,7 @@ class TelegramService
 
     public function __construct(?string $token = null)
     {
-        $botToken = admin_setting('telegram_bot_token', $token);
+        $botToken = $token ?? admin_setting('telegram_bot_token');
         $this->apiUrl = "https://api.telegram.org/bot{$botToken}/";
 
         $this->http = Http::timeout(30)
@@ -59,9 +60,20 @@ class TelegramService
         return $this->request('getMe');
     }
 
-    public function setWebhook(string $url): object
+    public function getBotUsername(): string
     {
-        $result = $this->request('setWebhook', ['url' => $url]);
+        return Cache::remember('telegram:bot-username:' . hash('sha256', $this->apiUrl), 300, function () {
+            $username = $this->getMe()->result->username ?? null;
+            if (!is_string($username) || $username === '') {
+                throw new ApiException('无效的 Telegram Bot 用户名', 502);
+            }
+            return $username;
+        });
+    }
+
+    public function setWebhook(string $url, ?string $secret = null): object
+    {
+        $result = $this->request('setWebhook', array_filter(['url' => $url, 'secret_token' => $secret], static fn ($v) => $v !== null));
         return $result;
     }
 
@@ -128,7 +140,7 @@ class TelegramService
     protected function request(string $method, array $params = []): object
     {
         try {
-            $response = $this->http->get($this->apiUrl . $method, $params);
+            $response = $this->http->post($this->apiUrl . $method, $params);
 
             if (!$response->successful()) {
                 throw new ApiException("HTTP 请求失败: {$response->status()}");
@@ -150,11 +162,10 @@ class TelegramService
         } catch (\Exception $e) {
             Log::error('Telegram API 请求失败', [
                 'method' => $method,
-                'params' => $params,
-                'error' => $e->getMessage(),
+                'exception' => $e::class,
             ]);
 
-            throw new ApiException("Telegram 服务错误: {$e->getMessage()}");
+            throw new ApiException('Telegram API 请求失败', 502);
         }
     }
 }

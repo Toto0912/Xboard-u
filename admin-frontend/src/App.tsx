@@ -4,6 +4,7 @@ import { RouterProvider } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { router } from '@/router';
+import { useAuthStore } from '@/stores/auth';
 import { applyThemeToDocument, useUiStore } from '@/stores/ui';
 
 const queryClient = new QueryClient({
@@ -14,6 +15,10 @@ const queryClient = new QueryClient({
       retry: 1,
     },
   },
+});
+
+useAuthStore.subscribe((state, previous) => {
+  if (state.token !== previous.token) queryClient.clear();
 });
 
 function ThemeSync() {

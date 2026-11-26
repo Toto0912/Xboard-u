@@ -169,12 +169,13 @@ class Plan extends Model
         ];
     }
 
-    /**
-     * 获取指定周期的价格
-     *
-     * @param string $period
-     * @return int|null
-     */
+    /** A reset can explicitly cost zero for an existing eligible member. */
+    public static function isSalePrice(string $period, mixed $price): bool
+    {
+        return is_numeric($price) && ((float) $price >= 0.01
+            || ($period === self::PERIOD_RESET_TRAFFIC && (float) $price === 0.0));
+    }
+
     public function getPriceByPeriod(string $period): ?int
     {
         return $this->prices[$period] ?? null;

@@ -120,7 +120,17 @@ class PaymentService
         if (isset($order['quote_currency'])) {
             $payload['quote_currency'] = $order['quote_currency'];
         }
-        return $this->payment->pay($payload);
+        $result = $this->payment->pay($payload);
+        if ((int) ($result['type'] ?? -1) === 1) {
+            $url = $result['data'] ?? null;
+            $parts = is_string($url) ? parse_url($url) : false;
+            if (!$parts || !in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
+                || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])
+                || preg_match('/[\\x00-\\x20\\\\\\\\]/', $url)) {
+                throw new ApiException(__('Invalid payment link'));
+            }
+        }
+        return $result;
     }
 
     public function form()

@@ -21,6 +21,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import {
   fetchConfig,
   fetchPlansLite,
@@ -30,6 +31,7 @@ import {
   type ConfigMappings,
 } from '@/api/config';
 import { getThemes } from '@/api/theme';
+import { setCurrencySymbol } from '@/lib/settings';
 import { MailTemplateSection } from '@/components/config/MailTemplateSection';
 import { SubscribeTemplateSection } from '@/components/config/SubscribeTemplateSection';
 import { Button } from '@/components/ui/button';
@@ -173,7 +175,10 @@ export default function SystemConfigPage() {
 
   const saveMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) => saveConfig(payload),
-    onSuccess: () => {
+    onSuccess: (saved, payload) => {
+      if (saved && typeof payload.currency_symbol === 'string') {
+        setCurrencySymbol(payload.currency_symbol);
+      }
       toast.success(t('common.saveSuccess'));
       void queryClient.invalidateQueries({ queryKey: ['admin-config'] });
       void queryClient.invalidateQueries({ queryKey: ['admin-themes'] });
@@ -1084,8 +1089,7 @@ export default function SystemConfigPage() {
                     size="icon"
                     onClick={() => {
                       if (!form.server.server_token) return;
-                      void navigator.clipboard.writeText(form.server.server_token);
-                      toast.success(t('common.copied'));
+                      void copyText(form.server.server_token);
                     }}
                   >
                     <Copy className="h-4 w-4" />

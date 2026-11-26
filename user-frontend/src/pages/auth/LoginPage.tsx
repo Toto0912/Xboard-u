@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, Loader2, Mail } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -33,20 +33,26 @@ export default function LoginPage() {
     document.title = `${t('auth.loginBtn')} | ${title}`;
   }, [t, title]);
 
-  const redirectTarget = searchParams.get('redirect') || '/dashboard';
+  const target = searchParams.get('redirect') || '';
+  const redirectTarget = /^\/?[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?(?:[?#][^\s\\]*)?$/.test(target)
+    ? '/' + target.replace(/^\//, '')
+    : '/dashboard';
+  const exchange = useRef<{ token: string; result: ReturnType<typeof token2Login> } | null>(null);
   const verifyToken = searchParams.get('verify');
 
   useEffect(() => {
     if (!verifyToken) return;
     let cancelled = false;
     setVerifyingToken(true);
-    void token2Login(verifyToken)
+    if (exchange.current?.token !== verifyToken) {
+      exchange.current = { token: verifyToken, result: token2Login(verifyToken) };
+    }
+    void exchange.current.result
       .then((res) => {
         if (cancelled) return;
         setStoredToken(res.auth_data);
         toast.success(t('auth.loginSuccess'));
-        const safePath = redirectTarget.startsWith('/') ? redirectTarget : `/${redirectTarget}`;
-        navigate(safePath, { replace: true });
+        navigate(redirectTarget, { replace: true });
       })
       .catch(() => {
         if (!cancelled) setVerifyingToken(false);
@@ -61,8 +67,7 @@ export default function LoginPage() {
     onSuccess: (data) => {
       setStoredToken(data.auth_data);
       toast.success(t('auth.loginSuccess'));
-      const safePath = redirectTarget.startsWith('/') ? redirectTarget : `/${redirectTarget}`;
-      navigate(safePath, { replace: true });
+      navigate(redirectTarget, { replace: true });
     },
   });
 

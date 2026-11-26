@@ -194,6 +194,22 @@ export default function ServerManagePage() {
     return filteredNodes.slice(start, start + pageSize);
   }, [filteredNodes, page, pageSize]);
 
+  useEffect(() => {
+    setSelectedIds([]);
+    setBatchDeleteOpen(false);
+    setBatchResetOpen(false);
+    setBatchMachineOpen(false);
+  }, [search, protocolFilter, groupFilter, machineFilter, statusFilter, sortKey, sortAsc, page, pageSize]);
+
+  useEffect(() => {
+    if (nodesQuery.data) setPage((current) => Math.min(current, Math.max(1, Math.ceil(filteredNodes.length / pageSize))));
+  }, [nodesQuery.data, filteredNodes.length, pageSize]);
+
+  useEffect(() => {
+    const visible = new Set(pagedNodes.map((node) => node.id));
+    setSelectedIds((ids) => ids.length ? ids.filter((id) => visible.has(id)) : ids);
+  }, [pagedNodes]);
+
   const toggleSort = (key: 'id' | 'online') => {
     if (sortKey === key) setSortAsc((v) => !v);
     else {

@@ -51,6 +51,15 @@ class ServerSave extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            if ($this->input('type') === 'shadowsocks') {
+                foreach (['protocol_settings.cipher', 'cdn_settings.server.protocol_settings.cipher'] as $field) {
+                    if ($field === 'cdn_settings.server.protocol_settings.cipher'
+                        && !$this->boolean('cdn_settings.enabled')) continue;
+                    if ($this->input($field) === '2022-blake3-chacha20-poly1305') {
+                        $validator->errors()->add($field, '多用户节点不支持 SS2022 ChaCha，请选择 SS2022 AES-128-GCM 或 AES-256-GCM 并刷新客户端订阅。');
+                    }
+                }
+            }
             \App\Support\Hysteria2PortHopping::validate($validator, $this->all());
             \App\Support\CustomKernelConfig::validate($validator, $this->all());
             \App\Support\Hysteria2Settings::validate($validator, $this->all());

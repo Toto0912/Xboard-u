@@ -100,7 +100,7 @@ class MachineRevocationTest extends TestCase
         $conn = $this->connect($machine, $events);
         $emptyConn = $this->connect($empty, $emptyEvents);
         NodeRegistry::refreshMachineNodes($machine->id, [42]);
-        Cache::put('node_ws_alive:42', true);
+        Cache::put('node_ws_alive:42', $conn->wsOwner);
         $this->mock(DeviceStateService::class)->shouldReceive('clearAllNodeDevices')->once()->with(42)->andReturn([]);
         try {
             $machine->update(['is_active' => false]);
@@ -133,7 +133,7 @@ class MachineRevocationTest extends TestCase
         $fresh = $this->connect($machine, $newEvents);
         try {
             NodeRegistry::refreshMachineNodes($machine->id, [41]);
-            Cache::put('node_ws_alive:41', true);
+            Cache::put('node_ws_alive:41', $fresh->wsOwner);
             $this->worker->revalidateMachineSessions([$machine->id]);
             $this->worker->onClose($old);
             $this->assertSame($fresh, NodeRegistry::getMachine($machine->id));
@@ -143,6 +143,23 @@ class MachineRevocationTest extends TestCase
             $this->assertSame(['auth.success'], array_column($newEvents, 'event'));
         } finally {
             $this->worker->onClose($fresh);
+        }
+    }
+
+    public function test_another_workers_machine_owner_cannot_be_overwritten_by_a_late_pong_or_membership_change(): void
+    {
+        $machine = $this->machine();
+        $events = [];
+        $old = $this->connect($machine, $events);
+        Cache::put("machine_ws_owner:{$machine->id}", 'remote-session');
+        try {
+            $this->worker->refreshMachineMembership($machine->id);
+            $this->assertFalse(NodeRegistry::sendMachine($machine->id, 'sync.nodes', ['nodes' => []]));
+            $this->worker->onMessage($old, '{"event":"pong"}');
+            $this->assertSame(['auth.success', 'close'], array_column($events, 'event'));
+            $this->assertSame('remote-session', Cache::get("machine_ws_owner:{$machine->id}"));
+        } finally {
+            $this->worker->onClose($old);
         }
     }
 
@@ -168,6 +185,7 @@ class MachineRevocationTest extends TestCase
         $old = $this->connect($machine, $oldEvents);
         $this->mock(DeviceStateService::class)->shouldReceive('clearAllNodeDevices')->once()->with(41)->andReturn([]);
         NodeRegistry::refreshMachineNodes($machine->id, [41]);
+        Cache::put('node_ws_alive:41', $old->wsOwner);
         $fresh = $this->connect($machine, $newEvents);
         try {
             $this->assertFalse(NodeRegistry::send(41, 'sync.users', []));

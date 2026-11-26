@@ -21,6 +21,19 @@ class StatController extends Controller
     {
         $this->service = $service;
     }
+    public function getRanking(Request $request)
+    {
+        $data = $request->validate([
+            'type' => 'required|in:server_traffic_rank,user_consumption_rank,invite_rank',
+            'limit' => 'sometimes|integer|min:1|max:100',
+            'start_at' => 'required_with:end_at|integer|min:0',
+            'end_at' => 'required_with:start_at|integer|gt:start_at',
+        ]);
+        $this->service->setStartAt($data['start_at'] ?? now()->startOfDay()->timestamp);
+        $this->service->setEndAt($data['end_at'] ?? now()->tomorrow()->startOfDay()->timestamp);
+        return $this->success($this->service->getRanking($data['type'], (int) ($data['limit'] ?? 20)));
+    }
+
     public function getOverride(Request $request)
     {
         // 获取在线节点数

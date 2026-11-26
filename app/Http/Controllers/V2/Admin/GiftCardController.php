@@ -25,7 +25,7 @@ class GiftCardController extends Controller
             'per_page' => 'integer|min:1|max:1000',
         ]);
 
-        $query = GiftCardTemplate::query();
+        $query = GiftCardTemplate::withCount(['codes', 'usages as used_count']);
 
         if ($request->has('type')) {
             $query->where('type', $request->input('type'));
@@ -40,7 +40,7 @@ class GiftCardController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate($perPage);
 
-        $data = $templates->getCollection()->map(function ($template) {
+        $templates->through(function ($template) {
             return [
                 'id' => $template->id,
                 'name' => $template->name,
@@ -60,12 +60,12 @@ class GiftCardController extends Controller
                 'created_at' => $template->created_at,
                 'updated_at' => $template->updated_at,
                 // 统计信息
-                'codes_count' => $template->codes()->count(),
-                'used_count' => $template->usages()->count(),
+                'codes_count' => $template->codes_count,
+                'used_count' => $template->used_count,
             ];
-        })->values();
+        });
 
-        return $this->paginate( $templates);
+        return $this->paginate($templates);
     }
 
     /**
@@ -84,6 +84,8 @@ class GiftCardController extends Controller
             'status' => 'boolean',
             'conditions' => 'nullable|array',
             'rewards' => 'required|array',
+            'rewards.random_rewards' => 'sometimes|array|list|min:1',
+            'rewards.random_rewards.*.weight' => 'required|integer|min:1|max:2147483647',
             'limits' => 'nullable|array',
             'special_config' => 'nullable|array',
             'icon' => 'nullable|string|max:255',
@@ -147,6 +149,8 @@ class GiftCardController extends Controller
             'status' => 'sometimes|boolean',
             'conditions' => 'sometimes|nullable|array',
             'rewards' => 'sometimes|required|array',
+            'rewards.random_rewards' => 'sometimes|array|list|min:1',
+            'rewards.random_rewards.*.weight' => 'required|integer|min:1|max:2147483647',
             'limits' => 'sometimes|nullable|array',
             'special_config' => 'sometimes|nullable|array',
             'icon' => 'sometimes|nullable|string|max:255',
@@ -169,6 +173,10 @@ class GiftCardController extends Controller
 
             $updateData['updated_at'] = time();
 
+            if ($request->has('rewards')) {
+                // Validating pool weights must preserve the other reward fields accepted by this API.
+                $updateData['rewards'] = $request->input('rewards');
+            }
             $template->update($updateData);
 
             return $this->success($template->fresh());
@@ -253,16 +261,13 @@ class GiftCardController extends Controller
                 $options
             );
 
-            // 查询本次生成的所有兑换码
-            $codes = GiftCardCode::where('batch_id', $batchId)->get();
-
             // 判断是否导出 CSV
             if ($request->input('download_csv')) {
                 $headers = [
                     'Content-Type' => 'text/csv',
                     'Content-Disposition' => 'attachment; filename="gift_codes.csv"',
                 ];
-                $callback = function () use ($codes, $template) {
+                $callback = function () use ($batchId, $template) {
                     $handle = fopen('php://output', 'w');
                     // 表头
                     fputcsv($handle, [
@@ -280,7 +285,7 @@ class GiftCardController extends Controller
                         '使用时间',
                         '备注'
                     ]);
-                    foreach ($codes as $code) {
+                    foreach (GiftCardCode::where('batch_id', $batchId)->lazyById(200) as $code) {
                         $expireDate = $code->expires_at ? date('Y-m-d H:i:s', $code->expires_at) : '长期有效';
                         $createDate = date('Y-m-d H:i:s', $code->created_at);
                         $templateName = $template->name ?? '';
@@ -347,7 +352,7 @@ class GiftCardController extends Controller
             'per_page' => 'integer|min:1|max:500',
         ]);
 
-        $query = GiftCardCode::with(['template', 'user']);
+        $query = GiftCardCode::with(['template:id,name', 'user:id,email']);
 
         if ($request->has('template_id')) {
             $query->where('template_id', $request->input('template_id'));
@@ -364,7 +369,7 @@ class GiftCardController extends Controller
         $perPage = $request->input('per_page', 15);
         $codes = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        $data = $codes->getCollection()->map(function ($code) {
+        $codes->through(function ($code) {
             return [
                 'id' => $code->id,
                 'template_id' => $code->template_id,
@@ -381,7 +386,7 @@ class GiftCardController extends Controller
                 'max_usage' => $code->max_usage,
                 'created_at' => $code->created_at,
             ];
-        })->values();
+        });
 
         return $this->paginate($codes);
     }
@@ -451,7 +456,7 @@ class GiftCardController extends Controller
             'per_page' => 'integer|min:1|max:500',
         ]);
 
-        $query = GiftCardUsage::with(['template', 'code', 'user', 'inviteUser']);
+        $query = GiftCardUsage::with(['template:id,name', 'code:id,code', 'user:id,email', 'inviteUser:id,email']);
 
         if ($request->has('template_id')) {
             $query->where('template_id', $request->input('template_id'));
@@ -464,7 +469,7 @@ class GiftCardController extends Controller
         $perPage = $request->input('per_page', 15);
         $usages = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
-        $usages->transform(function ($usage) {
+        $usages->through(function ($usage) {
             return [
                 'id' => $usage->id,
                 'code' => $usage->code->code ?? '',
@@ -476,7 +481,7 @@ class GiftCardController extends Controller
                 'multiplier_applied' => $usage->multiplier_applied,
                 'created_at' => $usage->created_at,
             ];
-        })->values();
+        });
         return $this->paginate($usages);
     }
 

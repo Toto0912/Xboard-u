@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
 use App\Support\ClashProxyGroups;
+use App\Support\ClashTemplate;
 use App\Support\MihomoXhttp;
 use Illuminate\Support\Facades\Log;
 
@@ -152,7 +153,7 @@ class ClashMeta extends AbstractProtocol
 
         $template = subscribe_template('clashmeta');
 
-        $config = Yaml::parse($template);
+        $config = ClashTemplate::parse($template, $appName);
         $proxy = [];
         $proxies = [];
 
@@ -206,7 +207,6 @@ class ClashMeta extends AbstractProtocol
         $config = $this->buildRules($config);
 
         $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_OBJECT_AS_MAP);
-        $yaml = str_replace('$app_name', admin_setting('app_name', 'XBoard'), $yaml);
         return response($yaml)
             ->header('content-type', 'text/yaml')
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}")
@@ -220,9 +220,8 @@ class ClashMeta extends AbstractProtocol
     public function buildRules($config)
     {
         // Force the current subscription domain to be a direct rule
-        $subsDomain = request()->header('Host');
-        if ($subsDomain) {
-            array_unshift($config['rules'], "DOMAIN,{$subsDomain},DIRECT");
+        if ($rule = ClashTemplate::subscriptionRule()) {
+            array_unshift($config['rules'], $rule);
         }
         // // Force the nodes ip to be a direct rule
         // collect($this->servers)->pluck('host')->map(function ($host) {

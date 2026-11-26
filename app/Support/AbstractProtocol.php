@@ -61,14 +61,18 @@ abstract class AbstractProtocol
     {
         $this->user = $user;
         $this->servers = $servers;
-        $this->clientName = $clientName;
-        $this->clientVersion = $clientVersion;
+        $this->clientName = is_string($clientName) ? strtolower(trim($clientName)) : null;
+        $this->clientVersion = preg_match('/^v?(\d+(?:\.\d+)*(?:[-+][\w.-]+)?)$/i', trim((string) $clientVersion), $match)
+            ? $match[1] : null;
         $this->userAgent = $userAgent;
         $this->protocolRequirements = $this->normalizeProtocolRequirements($this->protocolRequirements);
         $this->servers = collect($this->servers)->map(self::clientPayload(...))->all();
-        $this->servers = collect(HookManager::filter('protocol.servers.filtered', $this->filterServersByVersion()))
-            ->map(self::clientPayload(...))
-            ->filter(function ($server) {
+        $servers = collect($this->filterServersByVersion());
+        if (HookManager::hasHook('protocol.servers.filtered')) {
+            $servers = collect(HookManager::filter('protocol.servers.filtered', $servers->all()))
+                ->map(self::clientPayload(...));
+        }
+        $this->servers = $servers->filter(function ($server) {
                 if ($this->supportsNativeSingBoxTransport || !is_array($server) || !ServerTransport::requiresNativeSingBoxTransport($server)) {
                     return true;
                 }
@@ -116,10 +120,6 @@ abstract class AbstractProtocol
         $hasGlobalConfig = isset($this->protocolRequirements['*']);
         $hasClientConfig = isset($this->protocolRequirements[$this->clientName]);
 
-        if ((blank($this->clientName) || blank($this->clientVersion)) && !$hasGlobalConfig) {
-            return $this->servers;
-        }
-
         if (!$hasGlobalConfig && !$hasClientConfig) {
             return $this->servers;
         }
@@ -163,6 +163,9 @@ abstract class AbstractProtocol
      */
     private function checkRequirements(array $requirements, array $server): bool
     {
+        if (isset($requirements['base_version']) && !$this->meetsVersion($requirements['base_version'])) {
+            return false;
+        }
         foreach ($requirements as $field => $filterRule) {
             if (in_array($field, ['base_version', 'incompatible'])) {
                 continue;
@@ -188,7 +191,7 @@ abstract class AbstractProtocol
                         return false;
                     }
                     $requiredVersion = $allowedValues[$actualValue];
-                    if ($requiredVersion !== '0.0.0' && version_compare($this->clientVersion, $requiredVersion, '<')) {
+                    if (!$this->meetsVersion($requiredVersion)) {
                         return false;
                     }
                     continue;
@@ -208,12 +211,19 @@ abstract class AbstractProtocol
                 continue;
             }
             $requiredVersion = $allowedValues[$actualValue];
-            if ($requiredVersion !== '0.0.0' && version_compare($this->clientVersion, $requiredVersion, '<')) {
+            if (!$this->meetsVersion($requiredVersion)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private function meetsVersion(string $minimum): bool
+    {
+        // The existing capability tables use this value for unsupported combinations.
+        return $minimum !== '9999.0.0'
+            && ($this->clientVersion === null || version_compare($this->clientVersion, $minimum, '>='));
     }
 
     /**

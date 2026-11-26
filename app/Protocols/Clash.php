@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Yaml\Yaml;
 use App\Support\AbstractProtocol;
 use App\Support\ClashProxyGroups;
+use App\Support\ClashTemplate;
 
 class Clash extends AbstractProtocol
 {
@@ -45,7 +46,7 @@ class Clash extends AbstractProtocol
         // 优先从数据库配置中获取模板
         $template = subscribe_template('clash');
 
-        $config = Yaml::parse($template);
+        $config = ClashTemplate::parse($template, $appName);
         $proxy = [];
         $proxies = [];
 
@@ -88,7 +89,6 @@ class Clash extends AbstractProtocol
 
 
         $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE);
-        $yaml = str_replace('$app_name', admin_setting('app_name', 'XBoard'), $yaml);
         return response($yaml)
             ->header('content-type', 'text/yaml')
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}")
@@ -103,9 +103,8 @@ class Clash extends AbstractProtocol
     public function buildRules($config)
     {
         // Force the current subscription domain to be a direct rule
-        $subsDomain = request()->header('Host');
-        if ($subsDomain) {
-            array_unshift($config['rules'], "DOMAIN,{$subsDomain},DIRECT");
+        if ($rule = ClashTemplate::subscriptionRule()) {
+            array_unshift($config['rules'], $rule);
         }
 
         return $config;

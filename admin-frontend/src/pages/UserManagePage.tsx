@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,7 @@ import {
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import { assignOrder } from '@/api/order';
 import { fetchPlans, LEGACY_PERIOD_KEYS, LEGACY_PERIOD_MAP } from '@/api/plan';
 import { resetUserTraffic } from '@/api/trafficReset';
@@ -74,7 +75,8 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { UserEditDrawer } from '@/components/user/UserEditDrawer';
 import { UserTrafficLogsDialog } from '@/components/user/UserTrafficLogsDialog';
-import { formatBytes, formatTimestamp, getTrafficUsageTone } from '@/lib/format';
+import { getPanelSettings } from '@/lib/settings';
+import { formatBytes, formatTimestamp, getTrafficUsageTone, parseCents } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 interface AdvancedFilterRow {
@@ -121,6 +123,7 @@ export default function UserManagePage() {
   const [assignAmountYuan, setAssignAmountYuan] = useState('');
 
   const [resetSecretTarget, setResetSecretTarget] = useState<UserRecord | null>(null);
+  const [resetOperationId, setResetOperationId] = useState<string>();
   const [resetTrafficTarget, setResetTrafficTarget] = useState<UserRecord | null>(null);
   const [deletingTarget, setDeletingTarget] = useState<UserRecord | null>(null);
   const [trafficLogsUser, setTrafficLogsUser] = useState<UserRecord | null>(null);
@@ -135,9 +138,11 @@ export default function UserManagePage() {
     }
     for (const f of advancedFilters) {
       if (f.value.trim() === '') continue;
+      const raw = f.value.trim();
+      const value = f.field === 'balance' ? parseCents(raw) : raw;
       arr.push({
         id: f.field,
-        value: `${f.operator}:${f.value.trim()}`,
+        value: `${f.operator}:${value}`,
       });
     }
     return arr;
@@ -236,7 +241,7 @@ export default function UserManagePage() {
   });
 
   const resetTrafficMutation = useMutation({
-    mutationFn: (id: number) => resetUserTraffic(id, 'Admin manual reset'),
+    mutationFn: (id: number) => resetUserTraffic(id, 'Admin manual reset', resetOperationId),
     onSuccess: () => {
       toast.success(t('serverNode.resetTrafficSuccess'));
       setResetTrafficTarget(null);
@@ -256,6 +261,19 @@ export default function UserManagePage() {
 
   const users = usersQuery.data?.data ?? [];
   const total = usersQuery.data?.total ?? 0;
+
+  useEffect(() => {
+    setSelectedIds([]);
+    setConfirmBanOpen(false);
+    setMailOpen(false);
+  }, [activeFilters, page, pageSize, sortField, sortDesc]);
+
+  useEffect(() => {
+    if (!usersQuery.data) return;
+    setPage((current) => Math.min(current, Math.max(1, Math.ceil(total / pageSize))));
+    const visible = new Set(usersQuery.data.data.map((user) => user.id));
+    setSelectedIds((ids) => ids.filter((id) => visible.has(id)));
+  }, [usersQuery.data, total, pageSize]);
 
   const currentScope =
     selectedIds.length > 0
@@ -280,15 +298,6 @@ export default function UserManagePage() {
     setSelectedIds((prev) =>
       checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id),
     );
-  };
-
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
   };
 
   const handleOpenAssign = (u: UserRecord) => {
@@ -602,7 +611,7 @@ export default function UserManagePage() {
                       </td>
                       <td className="px-3 py-3">
                         <Badge variant="outline" className="font-mono text-xs">
-                          {u.online_count ?? 0} / {u.device_limit ?? '∞'}
+                          {u.online_count ?? 0} / {Number(u.device_limit) > 0 ? u.device_limit : '∞'}
                         </Badge>
                       </td>
                       <td className="px-3 py-3">
@@ -637,10 +646,10 @@ export default function UserManagePage() {
                         {u.expired_at ? formatTimestamp(u.expired_at) : t('giftCard.permanent')}
                       </td>
                       <td className="px-3 py-3 font-mono text-xs">
-                        ¥{Number(u.balance ?? 0).toFixed(2)}
+                        {getPanelSettings().currency_symbol}{Number(u.balance ?? 0).toFixed(2)}
                       </td>
                       <td className="px-3 py-3 font-mono text-xs">
-                        ¥{Number(u.commission_balance ?? 0).toFixed(2)}
+                        {getPanelSettings().currency_symbol}{Number(u.commission_balance ?? 0).toFixed(2)}
                       </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">
                         {formatTimestamp(u.created_at)}
@@ -691,7 +700,10 @@ export default function UserManagePage() {
                               <Activity className="mr-2 h-4 w-4" />
                               {t('userManage.userTrafficLogs')}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setResetTrafficTarget(u)}>
+                            <DropdownMenuItem onClick={() => {
+                              setResetOperationId(globalThis.crypto?.randomUUID?.());
+                              setResetTrafficTarget(u);
+                            }}>
                               <RotateCcw className="mr-2 h-4 w-4" />
                               {t('serverNode.resetTraffic')}
                             </DropdownMenuItem>
@@ -749,7 +761,7 @@ export default function UserManagePage() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (!emailSuffix.trim()) {
+              if (!emailSuffix.trim() || (!emailPrefix.trim() && !createCount.trim())) {
                 toast.error(t('userManage.emailRequired'));
                 return;
               }
@@ -985,6 +997,10 @@ export default function UserManagePage() {
               <Button
                 type="button"
                 onClick={() => {
+                  if (draftFilters.some((f) => f.field === 'balance' && f.value.trim() && parseCents(f.value) === null)) {
+                    toast.error(t('common.invalidAmount', { defaultValue: 'Invalid amount' }));
+                    return;
+                  }
                   setAdvancedFilters(draftFilters.filter((r) => r.value.trim() !== ''));
                   setFilterDialogOpen(false);
                   setPage(1);
@@ -1126,7 +1142,7 @@ export default function UserManagePage() {
                   onChange={(e) => setAssignAmountYuan(e.target.value)}
                 />
                 <span className="pointer-events-none absolute right-3 text-xs text-muted-foreground">
-                  CNY
+                  {getPanelSettings().currency}
                 </span>
               </div>
             </div>

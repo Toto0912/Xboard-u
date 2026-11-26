@@ -219,6 +219,7 @@ export function NodeEditorDialog({
   });
 
   const switchProtocol = (next: ServerProtocolType, clearCdn = false) => {
+    setDraftInvalid(false);
     setProtocol(next);
     setProtocolSettings(defaultProtocolSettings(next));
     setHopIntervalRaw('');
@@ -252,6 +253,7 @@ export function NodeEditorDialog({
     }
 
     const ps = JSON.parse(JSON.stringify(protocolSettings ?? {})) as Record<string, unknown>;
+    delete ps.hy2_draft_invalid;
     ps.target_kernel = inferTargetKernel(protocol, ps);
 
     if (isHy2V2) {
@@ -316,10 +318,12 @@ export function NodeEditorDialog({
     };
 
     if (cdnSettings.server) {
+      const settings = { ...cdnSettings.server.protocol_settings };
+      delete settings.hy2_draft_invalid;
       payload.cdn_settings = {
         enabled: Boolean(cdnSettings.enabled),
         type: protocol,
-        server: cdnSettings.server,
+        server: { ...cdnSettings.server, protocol_settings: settings },
       };
     } else if (editing?.cdn_settings) {
       payload.cdn_settings = { enabled: false };

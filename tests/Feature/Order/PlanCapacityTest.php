@@ -247,6 +247,10 @@ class PlanCapacityTest extends TestCase
     public function test_purchase_lists_count_remaining_seats_once_and_preserve_capacity_limits(): void
     {
         $limited = $this->plan(100);
+        $otherPlans = [];
+        foreach (range(1, 12) as $index) {
+            $otherPlans[] = $this->plan(10 + $index);
+        }
         $unlimited = $this->plan(null);
         $closed = $this->plan(0);
         foreach (range(1, 98) as $unused) {
@@ -273,6 +277,9 @@ class PlanCapacityTest extends TestCase
             $this->assertSame(100, $plans[$limited->id]['capacity_limit']);
             $this->assertSame(1, $plans[$limited->id]['remaining_capacity']);
             $this->assertNull($plans[$unlimited->id]['remaining_capacity']);
+            foreach ($otherPlans as $otherPlan) {
+                $this->assertSame($otherPlan->capacity_limit, $plans[$otherPlan->id]['remaining_capacity']);
+            }
             $this->assertArrayNotHasKey($closed->id, $plans);
         }
 

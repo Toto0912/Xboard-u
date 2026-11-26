@@ -22,6 +22,7 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import {
   createGiftCardTemplate,
   deleteGiftCardCode,
@@ -102,6 +103,7 @@ export default function GiftCardManagePage() {
   const [rewardTrafficDirty, setRewardTrafficDirty] = useState(false);
   const [rewardExpireDays, setRewardExpireDays] = useState('');
   const [rewardDeviceLimit, setRewardDeviceLimit] = useState('');
+  const [poolDraft, setPoolDraft] = useState('');
   const [rewardResetPkg, setRewardResetPkg] = useState(false);
   const [rewardPlanId, setRewardPlanId] = useState('');
   const [rewardPlanDays, setRewardPlanDays] = useState('30');
@@ -290,6 +292,7 @@ export default function GiftCardManagePage() {
     setRewardTrafficDirty(false);
     setRewardExpireDays('');
     setRewardDeviceLimit('');
+    setPoolDraft('');
     setRewardResetPkg(false);
     setRewardPlanId(plansQuery.data?.[0] ? String(plansQuery.data[0].id) : '');
     setRewardPlanDays('30');
@@ -324,6 +327,7 @@ export default function GiftCardManagePage() {
     setRewardTrafficDirty(false);
     setRewardExpireDays(r.expire_days ? String(r.expire_days) : '');
     setRewardDeviceLimit(r.device_limit ? String(r.device_limit) : '');
+    setPoolDraft(r.random_rewards ? JSON.stringify(r.random_rewards, null, 2) : '');
     setRewardResetPkg(Boolean(r.reset_package));
     setRewardPlanId(r.plan_id ? String(r.plan_id) : '');
     setRewardPlanDays(r.plan_validity_days ? String(r.plan_validity_days) : '30');
@@ -347,7 +351,18 @@ export default function GiftCardManagePage() {
       return;
     }
 
-    const rewards: Record<string, unknown> = {};
+    const rewards: Record<string, unknown> = { ...(editingTpl?.rewards ?? {}) };
+    for (const key of ['balance', 'transfer_enable', 'expire_days', 'device_limit', 'reset_package', 'plan_id', 'plan_validity_days', 'invite_reward_rate', 'random_rewards']) delete rewards[key];
+    if (tplFormType === 3 && poolDraft.trim()) {
+      try {
+        const pool: unknown = JSON.parse(poolDraft);
+        if (!Array.isArray(pool) || pool.some((item) => !item || Array.isArray(item) || typeof item !== 'object' || !Number.isSafeInteger(Number(item.weight)) || Number(item.weight) < 1)) throw new Error();
+        if (pool.length) rewards.random_rewards = pool;
+      } catch {
+        toast.error(t('giftCard.invalidPool', { defaultValue: 'Enter a JSON array with a positive integer weight for each reward.' }));
+        return;
+      }
+    }
     if (Number(rewardBalanceYuan) > 0) {
       rewards.balance = Math.round(Number(rewardBalanceYuan) * 100);
     }
@@ -436,15 +451,6 @@ export default function GiftCardManagePage() {
       max_usage: Number(genMaxUsage) || 1,
       download_csv: genDownloadCsv,
     });
-  };
-
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
   };
 
   return (
@@ -1128,6 +1134,12 @@ export default function GiftCardManagePage() {
                   </div>
                 </div>
 
+                {tplFormType === 3 && (
+                  <div className="space-y-1">
+                    <Label htmlFor="gift-random-pool">{t('giftCard.randomRewards', { defaultValue: 'Random rewards (JSON)' })}</Label>
+                    <Textarea id="gift-random-pool" className="font-mono" value={poolDraft} onChange={(e) => setPoolDraft(e.target.value)} />
+                  </div>
+                )}
                 {tplFormType === 2 && (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div className="space-y-1">

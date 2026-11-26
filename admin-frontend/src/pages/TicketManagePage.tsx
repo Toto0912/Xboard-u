@@ -47,6 +47,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { getPanelSettings } from '@/lib/settings';
 import { formatBytes } from '@/lib/format';
 
 function formatUnixTs(ts?: number | null): string {
@@ -114,7 +115,8 @@ export default function TicketManagePage() {
     queryKey: ['admin-ticket-detail', activeTicketId],
     queryFn: () => fetchTicketDetail(activeTicketId!),
     enabled: detailOpen && activeTicketId !== null,
-    refetchInterval: detailOpen && activeTicketId !== null ? 5000 : false,
+    refetchInterval: (query) =>
+      detailOpen && activeTicketId !== null && query.state.data?.status !== TICKET_STATUS_CLOSED ? 5000 : false,
   });
 
   const detail = detailQuery.data;
@@ -510,7 +512,7 @@ export default function TicketManagePage() {
                           </span>
                           {detail.user && (
                             <span className="font-mono">
-                              {t('ticket.userBalance')}: ¥{Number(detail.user.balance ?? 0).toFixed(2)}
+                              {t('ticket.userBalance')}: {getPanelSettings().currency_symbol}{Number(detail.user.balance ?? 0).toFixed(2)}
                               {' · '}
                               {t('ticket.userTraffic')}:{' '}
                               {formatBytes(Number(detail.user.u ?? 0) + Number(detail.user.d ?? 0))} /{' '}

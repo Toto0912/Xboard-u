@@ -48,10 +48,7 @@ Route::get('/', function (Request $request) {
 
         $publicThemePath = public_path('theme/' . $theme);
         if (!File::exists($publicThemePath)) {
-            $themePath = $themeService->getThemePath($theme);
-            if (!$themePath || !File::copyDirectory($themePath, $publicThemePath)) {
-                throw new Exception('主题初始化失败');
-            }
+            $themeService->publish($theme);
             Log::info('Theme initialized in public directory', ['theme' => $theme]);
         }
 
@@ -77,6 +74,8 @@ Route::get('/', function (Request $request) {
 Route::get('/' . admin_setting('secure_path', admin_setting('frontend_admin_path', hash('crc32b', config('app.key')))), function () {
     return view('admin', [
         'title' => admin_setting('app_name', 'XBoard'),
+        'currency' => admin_setting('currency', 'CNY'),
+        'currency_symbol' => admin_setting('currency_symbol', '¥'),
         'theme_sidebar' => admin_setting('frontend_theme_sidebar', 'light'),
         'theme_header' => admin_setting('frontend_theme_header', 'dark'),
         'theme_color' => admin_setting('frontend_theme_color', 'default'),

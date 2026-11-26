@@ -59,14 +59,14 @@ export function CodeEditor({
     templateTools ?? (showJsonTools && language === 'json' ? 'json' : undefined);
 
   const validateLabel =
-    effectiveTools === 'json'
+    effectiveTools?.startsWith('json')
       ? t('common.validateJson')
       : effectiveTools === 'yaml'
         ? t('common.validateYaml')
         : t('common.validateConf');
 
   const validSuccessMessage =
-    effectiveTools === 'json'
+    effectiveTools?.startsWith('json')
       ? t('common.jsonValid')
       : effectiveTools === 'yaml'
         ? t('common.yamlValid')

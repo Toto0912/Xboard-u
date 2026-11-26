@@ -1,4 +1,14 @@
-export function formatCurrency(cents: number | string | null | undefined, symbol = '¥'): string {
+import { getPanelSettings } from '@/lib/settings';
+
+export function parseCents(input: string): number | null {
+  const value = input.trim();
+  if (!/^-?(?:\d+(?:\.\d{1,2})?|\.\d{1,2})$/.test(value)) return null;
+  const [whole, fraction = ''] = value.replace(/^-/, '').split('.');
+  const cents = Number((whole || '0') + fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) ? (value.startsWith('-') ? -cents : cents) : null;
+}
+
+export function formatCurrency(cents: number | string | null | undefined, symbol = getPanelSettings().currency_symbol): string {
   const num = Number(cents ?? 0);
   if (!Number.isFinite(num)) return `${symbol}0.00`;
   return `${symbol}${(num / 100).toLocaleString(undefined, {
@@ -19,6 +29,7 @@ export function formatBytes(bytes: number | string | null | undefined): string {
 export function formatTimestamp(ts: number | string | null | undefined): string {
   if (ts === null || ts === undefined || ts === '') return '—';
   const num = Number(ts);
+  if (num === 0) return '—';
   const date = Number.isFinite(num)
     ? new Date(num > 1e12 ? num : num * 1000)
     : new Date(String(ts));

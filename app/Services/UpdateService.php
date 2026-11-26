@@ -15,7 +15,7 @@ class UpdateService
     {
         $version = trim((string) config('app.version'));
         if ($version === '') {
-            return 'v2.4.1';
+            return 'v2.4.2';
         }
         return str_starts_with($version, 'v') ? $version : 'v' . $version;
     }

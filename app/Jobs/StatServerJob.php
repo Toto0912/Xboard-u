@@ -89,7 +89,7 @@ class StatServerJob implements ShouldQueue
 
     protected function processServerStat(int $u, int $d, int $recordAt): void
     {
-        $driver = config('database.default');
+        $driver = (new StatServer())->getConnection()->getDriverName();
         if ($driver === 'sqlite') {
             $this->processServerStatForSqlite($u, $d, $recordAt);
         } elseif ($driver === 'pgsql') {

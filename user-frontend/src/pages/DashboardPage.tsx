@@ -238,7 +238,7 @@ export default function DashboardPage() {
                   <div className="rounded-lg border bg-muted/20 p-2.5">
                     <div className="text-muted-foreground">{t('dashboard.deviceLimit')}</div>
                     <div className="mt-1 font-mono text-sm font-semibold">
-                      {sub?.device_limit ?? t('common.unlimited')}
+                      {Number(sub?.device_limit) > 0 ? sub?.device_limit : t('common.unlimited')}
                     </div>
                   </div>
                   <div className="rounded-lg border bg-muted/20 p-2.5">

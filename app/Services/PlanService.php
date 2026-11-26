@@ -29,11 +29,25 @@ class PlanService
      */
     public function getAvailablePlans(): Collection
     {
-        return Plan::where('show', true)
+        $plans = Plan::where('show', true)
             ->where('sell', true)
             ->orderBy('sort')
-            ->get()
-            ->filter(fn (Plan $plan) => $this->loadRemainingCapacity($plan) !== 0);
+            ->get();
+        $limitedIds = $plans->where('capacity_limit', '>', 0)->modelKeys();
+        $counts = [];
+        if ($limitedIds !== []) {
+            $active = $this->activeSeatUsers(time())->whereIntegerInRaw('plan_id', $limitedIds)
+                ->select('plan_id', 'id as user_id');
+            $reserved = $this->reservationOrders()->whereIntegerInRaw('plan_id', $limitedIds)
+                ->select('plan_id', 'user_id');
+            $counts = DB::query()->fromSub($active->union($reserved), 'occupied')->groupBy('plan_id')
+                ->selectRaw('plan_id, COUNT(*) AS seat_count')->pluck('seat_count', 'plan_id')->all();
+        }
+        return $plans->filter(function (Plan $plan) use ($counts) {
+            $remaining = $plan->capacity_limit === null ? null : max(0, $plan->capacity_limit - ($counts[$plan->id] ?? 0));
+            $plan->setAttribute('remaining_capacity', $remaining)->syncOriginalAttribute('remaining_capacity');
+            return $remaining !== 0;
+        });
     }
 
     /**
@@ -87,7 +101,7 @@ class PlanService
     public static function canPurchaseReset(Plan $plan, User $user): bool
     {
         return (int) $user->plan_id === $plan->id
-            && isset($plan->prices[Plan::PERIOD_RESET_TRAFFIC])
+            && Plan::isSalePrice(Plan::PERIOD_RESET_TRAFFIC, $plan->prices[Plan::PERIOD_RESET_TRAFFIC] ?? null)
             && app(UserService::class)->isAvailable($user);
     }
 
@@ -109,7 +123,7 @@ class PlanService
         $periodKey = self::getPeriodKey($period);
         $price = $this->plan->prices[$periodKey] ?? null;
 
-        if ($price === null) {
+        if (!Plan::isSalePrice($periodKey, $price)) {
             throw new ApiException(__('This payment period cannot be purchased, please choose another period'));
         }
 
@@ -252,7 +266,7 @@ class PlanService
         if ($this->plan->capacity_limit === null || $this->occupiesSeat($this->plan, $user, $now)) {
             return true;
         }
-        $reservation = $user->exists ? $this->reservations($this->plan)->where('user_id', $user->id)
+        $reservation = $user->exists ? $this->reservationOrders()->where('plan_id', $this->plan->id)->where('user_id', $user->id)
             ->orderBy('id')->sharedLock()->first(['id', 'user_id']) : null;
         return $this->remainingCapacity($this->plan, $reservation, $now, true) !== 0;
     }
@@ -267,11 +281,15 @@ class PlanService
         return $this->remainingCapacity($plan, $order, $now) !== 0;
     }
 
-    private function reservations(Plan $plan): Builder
+    private function reservationOrders(): Builder
     {
-        return Order::where('plan_id', $plan->id)
-            ->whereIn('status', [Order::STATUS_PENDING, Order::STATUS_PROCESSING])
+        return Order::whereIn('status', [Order::STATUS_PENDING, Order::STATUS_PROCESSING])
             ->whereNotIn('period', [Plan::PERIOD_RESET_TRAFFIC, 'reset_price']);
+    }
+
+    private function activeSeatUsers(int $now): Builder
+    {
+        return User::where(fn ($query) => $query->where('expired_at', '>=', $now)->orWhereNull('expired_at'));
     }
 
     private function remainingCapacity(Plan $plan, ?Order $order, ?int $now, bool $currentRead = false): ?int
@@ -284,13 +302,9 @@ class PlanService
         }
 
         $now ??= time();
-        $active = User::where('plan_id', $plan->id)->select('id')
-            ->where(function ($query) use ($now) {
-                $query->where('expired_at', '>=', $now)
-                    ->orWhereNull('expired_at');
-            });
+        $active = $this->activeSeatUsers($now)->where('plan_id', $plan->id)->select('id');
         // An uncompleted subscription order is its owner's reservation. UNION counts renewals once.
-        $reserved = $this->reservations($plan)->select('user_id');
+        $reserved = $this->reservationOrders()->where('plan_id', $plan->id)->select('user_id');
         if ($order !== null) {
             // Existing sales can exceed the cap after an upgrade or an administrator lowers it.
             $reserved->where('id', '<', $order->id)->where('user_id', '!=', $order->user_id);

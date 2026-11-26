@@ -125,6 +125,11 @@ class User extends Authenticatable
         return $query->where('email', self::normalizeEmail($email));
     }
 
+    public function effectiveCommissionRate(): float
+    {
+        return (float) ($this->commission_rate ?? admin_setting('invite_commission', 10));
+    }
+
     // 获取邀请人信息
     public function invite_user(): BelongsTo
     {

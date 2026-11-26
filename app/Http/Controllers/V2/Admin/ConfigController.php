@@ -10,6 +10,7 @@ use App\Services\TelegramService;
 use App\Services\ThemeService;
 use App\Utils\Dict;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ConfigController extends Controller
 {
@@ -45,9 +46,10 @@ class ConfigController extends Controller
                 'url' => admin_setting('app_url')
             ]
         ]);
-        return response([
-            'data' => $mailLog,
-        ]);
+        if ($mailLog['error'] !== null) {
+            return $this->fail([502, $mailLog['error']]);
+        }
+        return $this->success(true);
     }
     public function setTelegramWebhook(Request $request)
     {
@@ -55,18 +57,31 @@ class ConfigController extends Controller
         if (blank($hookUrl)) {
             return $this->fail([422, 'Telegram Webhook地址未配置']);
         }
-        $hookUrl .= '?' . http_build_query([
-            'access_token' => md5(admin_setting('telegram_bot_token', $request->input('telegram_bot_token')))
-        ]);
-        $telegramService = new TelegramService($request->input('telegram_bot_token'));
-        $telegramService->getMe();
-        $telegramService->setWebhook(url: $hookUrl);
-        $telegramService->registerBotCommands();
+        $request->validate(['telegram_bot_token' => 'nullable|string']);
+        $token = $request->input('telegram_bot_token') ?? admin_setting('telegram_bot_token');
+        if (blank($token)) {
+            return $this->fail([422, 'Telegram Bot Token 未配置']);
+        }
+        $this->registerTelegramWebhook($token, $hookUrl);
         return $this->success([
             'success' => true,
             'webhook_url' => $hookUrl,
             'webhook_base_url' => $this->getTelegramWebhookBaseUrl(),
         ]);
+    }
+
+    private function registerTelegramWebhook(string $token, string $hookUrl): void
+    {
+        $telegramService = new TelegramService($token);
+        $telegramService->getMe();
+        $secret = bin2hex(random_bytes(32));
+        $telegramService->setWebhook($hookUrl, $secret);
+        DB::transaction(function () use ($token, $secret) {
+            \App\Models\Setting::createOrUpdate('telegram_bot_token', $token);
+            \App\Models\Setting::createOrUpdate('telegram_webhook_digest', hash_hmac('sha256', $secret, $token));
+        });
+        app(\App\Support\Setting::class)->flush();
+        $telegramService->registerBotCommands();
     }
 
     public function fetch(Request $request)
@@ -211,6 +226,18 @@ class ConfigController extends Controller
     public function save(ConfigSave $request)
     {
         $data = $request->validated();
+        $oldToken = admin_setting('telegram_bot_token');
+        $newToken = $data['telegram_bot_token'] ?? null;
+        if (filled($oldToken) && filled($newToken) && $oldToken !== $newToken
+            && ($data['telegram_bot_enable'] ?? admin_setting('telegram_bot_enable'))) {
+            $base = trim((string) ($data['telegram_webhook_url'] ?? admin_setting('telegram_webhook_url')));
+            $base = $base ?: trim((string) ($data['app_url'] ?? admin_setting('app_url')));
+            if ($base === '') {
+                return $this->fail([422, 'Telegram Webhook地址未配置']);
+            }
+            $this->registerTelegramWebhook($newToken, $this->resolveTelegramWebhookUrl($base));
+            unset($data['telegram_bot_token']);
+        }
 
         $templateKeys = [
             'subscribe_template_singbox' => 'singbox',
@@ -283,9 +310,9 @@ class ConfigController extends Controller
         return null;
     }
 
-    private function resolveTelegramWebhookUrl(): ?string
+    private function resolveTelegramWebhookUrl(?string $baseUrl = null): ?string
     {
-        $baseUrl = $this->getTelegramWebhookBaseUrl();
+        $baseUrl = rtrim($baseUrl ?? $this->getTelegramWebhookBaseUrl() ?? '', '/');
         if (!$baseUrl) {
             return null;
         }

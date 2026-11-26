@@ -12,6 +12,8 @@
       title: @json($title),
       version: @json($version),
       logo: @json($logo),
+      currency: @json($currency ?? 'CNY'),
+      currency_symbol: @json($currency_symbol ?? '¥'),
       secure_path: @json($secure_path)
     };
   </script>

@@ -210,12 +210,11 @@ class GiftCardTemplate extends Model
                 if ($now >= $festivalConfig['start_time'] && $now <= $festivalConfig['end_time']) {
                     $bonus = data_get($festivalConfig, 'festival_bonus', 1.0);
                     if ($bonus > 1.0) {
-                        foreach ($actualRewards as $key => &$value) {
-                            if (is_numeric($value)) {
-                                $value = intval($value * $bonus);
+                        foreach (['balance', 'transfer_enable', 'device_limit', 'expire_days', 'plan_validity_days'] as $key) {
+                            if (isset($actualRewards[$key]) && is_numeric($actualRewards[$key])) {
+                                $actualRewards[$key] = (int) ($actualRewards[$key] * $bonus);
                             }
                         }
-                        unset($value); // 解除引用
                     }
                 }
             }

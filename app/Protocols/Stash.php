@@ -7,6 +7,7 @@ use App\Utils\Helper;
 use Illuminate\Support\Facades\File;
 use App\Support\AbstractProtocol;
 use App\Support\ClashProxyGroups;
+use App\Support\ClashTemplate;
 use App\Models\Server;
 use App\Support\StashXhttp;
 use Illuminate\Support\Facades\Log;
@@ -133,7 +134,7 @@ class Stash extends AbstractProtocol
 
         $template = subscribe_template('stash');
 
-        $config = Yaml::parse($template);
+        $config = ClashTemplate::parse($template, $appName);
         $proxy = [];
         $proxies = [];
 
@@ -181,13 +182,11 @@ class Stash extends AbstractProtocol
         $config['proxies'] = array_merge($config['proxies'] ? $config['proxies'] : [], $proxy);
         $config['proxy-groups'] = ClashProxyGroups::appendNodes($config['proxy-groups'], $proxies);
         // Force the current subscription domain to be a direct rule
-        $subsDomain = request()->header('Host');
-        if ($subsDomain) {
-            array_unshift($config['rules'], "DOMAIN,{$subsDomain},DIRECT");
+        if ($rule = ClashTemplate::subscriptionRule()) {
+            array_unshift($config['rules'], $rule);
         }
 
         $yaml = Yaml::dump($config, 2, 4, Yaml::DUMP_EMPTY_ARRAY_AS_SEQUENCE | Yaml::DUMP_OBJECT_AS_MAP);
-        $yaml = str_replace('$app_name', admin_setting('app_name', 'XBoard'), $yaml);
         return response($yaml)
             ->header('content-type', 'text/yaml')
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}")

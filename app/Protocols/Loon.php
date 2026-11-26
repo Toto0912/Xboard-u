@@ -131,18 +131,16 @@ class Loon extends AbstractProtocol
 
         switch (data_get($server['protocol_settings'], 'network')) {
             case 'tcp':
-                $config[] = 'transport=tcp';
-                $tcpSettings = data_get($protocol_settings, 'network_settings');
-                if (data_get($tcpSettings, 'header.type'))
-                    $config = str_replace('transport=tcp', "transport={$tcpSettings['header']['type']}", $config);
+                $tcpSettings = data_get($protocol_settings, 'network_settings', []);
+                $config[] = data_get($tcpSettings, 'header.type') === 'http' ? 'transport=http' : 'transport=tcp';
                 if (data_get($tcpSettings, key: 'header.request.path')) {
                     $paths = data_get($tcpSettings, key: 'header.request.path');
-                    $path = $paths[array_rand($paths)];
+                    $path = is_array($paths) ? $paths[array_rand($paths)] : $paths;
                     $config[] = "path={$path}";
                 }
                 if (data_get($tcpSettings, key: 'header.request.headers.Host')) {
                     $hosts = data_get($tcpSettings, key: 'header.request.headers.Host');
-                    $host = $hosts[array_rand($hosts)];
+                    $host = is_array($hosts) ? $hosts[array_rand($hosts)] : $hosts;
                     $config[] = "host={$host}";
                 }
                 break;
@@ -348,8 +346,10 @@ class Loon extends AbstractProtocol
             $server['host'],
             $server['port'],
             $password,
-            $protocol_settings['tls']['server_name'] ? "sni={$protocol_settings['tls']['server_name']}" : "(null)"
         ];
+        if ($sni = data_get($protocol_settings, 'tls.server_name')) {
+            $config[] = 'sni=' . $sni;
+        }
         if (data_get($protocol_settings, 'tls.allow_insecure'))
             $config[] = "skip-cert-verify=true";
         if ($down = data_get($protocol_settings, 'bandwidth.down')) {

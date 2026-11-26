@@ -14,7 +14,7 @@ final class TrafficBatchOutbox
     public static function dispatchDue(?int $receiptId = null, ?string $kind = null, int $limit = 1000): int
     {
         $now = time();
-        $due = DB::table('v2_traffic_batch_tasks')->where('available_at', '<=', $now);
+        $due = DB::table('v2_traffic_batch_tasks')->useWritePdo()->where('available_at', '<=', $now);
         if ($receiptId !== null) {
             $due->where('receipt_id', $receiptId);
         }
@@ -27,7 +27,13 @@ final class TrafficBatchOutbox
             $claimed = DB::table('v2_traffic_batch_tasks')->where('id', $task->id)
                 ->where('available_at', '<=', $now)->update(['available_at' => $now + self::LEASE_SECONDS]);
             if ($claimed) {
-                Bus::dispatch(new ProcessTrafficBatchTask($task->receipt_id, $task->id));
+                try {
+                    Bus::dispatch(new ProcessTrafficBatchTask($task->receipt_id, $task->id));
+                } catch (\Throwable $error) {
+                    DB::table('v2_traffic_batch_tasks')->where('id', $task->id)
+                        ->where('available_at', $now + self::LEASE_SECONDS)->update(['available_at' => $now]);
+                    throw $error;
+                }
                 ++$dispatched;
             }
         }

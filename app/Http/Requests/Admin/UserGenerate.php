@@ -16,10 +16,10 @@ class UserGenerate extends FormRequest
     public function rules()
     {
         return [
-            'generate_count' => 'nullable|integer|max:500',
+            'generate_count' => 'nullable|integer|min:1|max:500',
             'expired_at' => 'nullable|integer',
             'plan_id' => 'nullable|integer',
-            'email_prefix' => 'nullable|string',
+            'email_prefix' => 'required_without:generate_count|nullable|string',
             'email_suffix' => 'required|string',
             'password' => 'nullable'
         ];
@@ -34,7 +34,7 @@ class UserGenerate extends FormRequest
 
             $prefix = $this->input('email_prefix');
             $count = (int) $this->input('generate_count', 0);
-            $prefix = $prefix
+            $prefix = $this->filled('email_prefix')
                 ? $prefix . ($count ? '_' . $count : '')
                 : 'xxxxxx';
 

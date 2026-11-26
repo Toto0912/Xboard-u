@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import {
   assignOrder,
   cancelOrder,
@@ -54,6 +55,7 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { getPanelSettings } from '@/lib/settings';
 import { formatCurrency, formatTimestamp } from '@/lib/format';
 
 const ORDER_STATUS_BADGE: Record<number, string> = {
@@ -76,6 +78,7 @@ export default function OrderManagePage() {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
 
+  const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [userIdFilter, setUserIdFilter] = useState<string>(() => searchParams.get('user_id') || '');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -101,6 +104,21 @@ export default function OrderManagePage() {
     const uid = searchParams.get('user_id');
     if (uid) setUserIdFilter(uid);
   }, [searchParams]);
+
+  useEffect(() => {
+    const next = searchDraft.trim();
+    if (next === search) return;
+    const apply = () => {
+      setPage(1);
+      setSearch(next);
+    };
+    if (!next) {
+      apply();
+      return;
+    }
+    const timer = window.setTimeout(apply, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, search]);
 
   const filters = useMemo<OrderFilter[]>(() => {
     const arr: OrderFilter[] = [];
@@ -210,7 +228,7 @@ export default function OrderManagePage() {
     const email = assignEmail.trim();
     const pid = Number(assignPlanId);
     const yuan = Number(assignAmountYuan);
-    if (!email || !pid || !Number.isFinite(yuan) || yuan < 0) {
+    if (!email || !pid || !assignAmountYuan.trim() || !Number.isFinite(yuan) || yuan < 0) {
       toast.error(t('order.assignValidationError'));
       return;
     }
@@ -222,17 +240,11 @@ export default function OrderManagePage() {
     });
   };
 
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
-  };
-
   const orders = ordersQuery.data?.data ?? [];
   const total = ordersQuery.data?.total ?? 0;
+  useEffect(() => {
+    if (ordersQuery.data) setPage((current) => Math.min(current, Math.max(1, Math.ceil(total / pageSize))));
+  }, [ordersQuery.data, total, pageSize]);
 
   return (
     <div className="space-y-4">
@@ -261,11 +273,8 @@ export default function OrderManagePage() {
         <div className="relative min-w-[160px] flex-1 max-w-[210px]">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
             placeholder={t('order.searchPlaceholder')}
             className="h-8 pl-8 text-xs"
           />
@@ -367,7 +376,7 @@ export default function OrderManagePage() {
 
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border bg-card/60">
-        {ordersQuery.isLoading ? (
+        {searchDraft.trim() !== search || ordersQuery.isLoading ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-12 w-full" />
@@ -639,7 +648,7 @@ export default function OrderManagePage() {
                   placeholder="0.00"
                 />
                 <span className="pointer-events-none absolute right-3 text-xs text-muted-foreground">
-                  CNY
+                  {getPanelSettings().currency}
                 </span>
               </div>
             </div>
@@ -673,6 +682,8 @@ export default function OrderManagePage() {
           </DialogHeader>
           {detailQuery.isLoading ? (
             <Skeleton className="h-40 w-full" />
+          ) : detailQuery.isError ? (
+            <p role="alert" className="text-sm text-destructive">{detailQuery.error.message}</p>
           ) : detailQuery.data ? (
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>

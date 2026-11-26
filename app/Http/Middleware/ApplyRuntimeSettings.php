@@ -11,13 +11,8 @@ class ApplyRuntimeSettings
     public function handle(Request $request, Closure $next)
     {
         $appUrl = admin_setting('app_url');
-        if (is_string($appUrl) && $appUrl !== '') {
-            URL::forceRootUrl($appUrl);
-        }
-
-        if ((bool) admin_setting('force_https', false)) {
-            URL::forceScheme('https');
-        }
+        URL::forceRootUrl(is_string($appUrl) && $appUrl !== '' ? $appUrl : null);
+        URL::forceScheme(admin_setting('force_https', false) ? 'https' : null);
 
         return $next($request);
     }

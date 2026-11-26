@@ -16,4 +16,13 @@ class TrimStrings extends Middleware
         'encrypted_data',
         'signature'
     ];
+
+    protected function clean($request)
+    {
+        // Form signatures include whitespace in non-empty merchant fields.
+        if ($request->is('api/v1/guest/payment/notify/EPay/*', 'api/v1/guest/payment/notify/MGate/*')) {
+            return;
+        }
+        parent::clean($request);
+    }
 }

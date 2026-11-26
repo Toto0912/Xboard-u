@@ -71,30 +71,26 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
         $str = http_build_query($params) . $this->getConfig('mgate_app_secret');
         $params['sign'] = md5($str);
 
+        $url = rtrim((string) $this->getConfig('mgate_url'), '/');
+        if (strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https') {
+            throw new ApiException('MGate 网关需要 HTTPS 地址');
+        }
         $curl = new Curl();
         $curl->setUserAgent('MGate');
-        $curl->setOpt(CURLOPT_SSL_VERIFYPEER, 0);
-        $curl->post($this->getConfig('mgate_url') . '/v1/gateway/fetch', http_build_query($params));
-        $result = $curl->response;
-
-        if (!$result) {
-            throw new ApiException('网络异常');
+        $curl->setOpt(CURLOPT_SSL_VERIFYPEER, true);
+        $curl->setOpt(CURLOPT_SSL_VERIFYHOST, 2);
+        $curl->setOpt(CURLOPT_FOLLOWLOCATION, false);
+        try {
+            $curl->post($url . '/v1/gateway/fetch', http_build_query($params));
+            if ($curl->error || !$curl->response) {
+                throw new ApiException('MGate 网关请求失败');
+            }
+            $result = $curl->response;
+        } finally {
+            $curl->close();
         }
 
-        if ($curl->error) {
-            if (isset($result->errors)) {
-                $errors = (array) $result->errors;
-                throw new ApiException($errors[array_keys($errors)[0]][0]);
-            }
-            if (isset($result->message)) {
-                throw new ApiException($result->message);
-            }
-            throw new ApiException('未知错误');
-        }
-
-        $curl->close();
-
-        if (!isset($result->data->trade_no)) {
+        if (!isset($result->data->trade_no, $result->data->pay_url)) {
             throw new ApiException('接口请求失败');
         }
 
@@ -110,8 +106,11 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
         if (!is_string($secret) || trim($secret) === '' || !is_array($params)) {
             return false;
         }
-        foreach ($params as $value) {
-            if (!is_string($value) && !is_int($value)) {
+        foreach ($params as $key => $value) {
+            if ($value === null) {
+                // Laravel converts empty form fields to null before the notification reaches us.
+                $params[$key] = '';
+            } elseif (!is_string($value) && !is_int($value)) {
                 return false;
             }
         }

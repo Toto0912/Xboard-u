@@ -133,6 +133,21 @@ class TrafficBatchConsumerTest extends TestCase
         $this->assertSame(120, $usage());
     }
 
+    public function test_failed_dispatch_releases_its_lease_immediately(): void
+    {
+        [$id] = $this->receipt();
+        Bus::shouldReceive('dispatch')->once()->andThrow(new RuntimeException('isolated queue unavailable'));
+        try {
+            TrafficBatchOutbox::dispatchDue($id, 'usage');
+            $this->fail('Expected queue failure');
+        } catch (RuntimeException $error) {
+            $this->assertSame('isolated queue unavailable', $error->getMessage());
+        }
+        Bus::shouldReceive('dispatch')->once();
+        $this->assertSame(1, TrafficBatchOutbox::dispatchDue($id, 'usage'));
+        $this->assertSame(0, TrafficBatchOutbox::dispatchDue($id, 'usage'));
+    }
+
     public function test_scheduler_recovers_lost_jobs_without_readvertising_an_active_lease(): void
     {
         [$id] = $this->receipt();

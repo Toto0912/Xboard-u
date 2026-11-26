@@ -85,7 +85,13 @@ class ServerService
             ->append(['last_check_at', 'last_push_at', 'online', 'is_online', 'available_status', 'cache_key', 'server_key']);
 
         self::loadStatusSnapshots($servers);
-        $servers = collect($servers)->map(function ($server) use ($user) {
+        $servers = collect($servers)->filter(function ($server) {
+            if (!$server->parent_id || $server->parent) return true;
+            \Illuminate\Support\Facades\Log::warning('Skipping subscription node with missing parent', [
+                'node_id' => $server->id, 'parent_id' => $server->parent_id,
+            ]);
+            return false;
+        })->values()->map(function ($server) use ($user) {
             // 判断动态端口
             if (str_contains($server->port, '-')) {
                 $port = $server->port;
@@ -137,19 +143,40 @@ class ServerService
     // 获取路由规则
     public static function getRoutes(array $routeIds)
     {
-        $routes = ServerRoute::select(['id', 'match', 'action', 'action_value'])->whereIn('id', $routeIds)->get();
+        $routes = ServerRoute::query()->useWritePdo()->select(['id', 'match', 'action', 'action_value'])->whereIn('id', $routeIds)->get();
         return $routes;
     }
 
     /**
      * 处理节点流量数据汇报
      */
+    public static function processTidalabTraffic(Server $node, mixed $rows): void
+    {
+        $traffic = [];
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            $id = $row['user_id'] ?? null;
+            if (is_string($id) || is_int($id)) {
+                $traffic[$id] = [$row['u'] ?? null, $row['d'] ?? null];
+            }
+        }
+        self::processTraffic($node, $traffic);
+    }
+
     public static function processTraffic(Server $node, array $traffic): void
     {
-        $data = array_filter($traffic, fn($item) =>
-            is_array($item) && count($item) === 2
-            && is_numeric($item[0]) && is_numeric($item[1])
-        );
+        $data = [];
+        foreach ($traffic as $id => $item) {
+            if (!is_int($id) || $id <= 0 || $id > 2147483647 || !is_array($item)
+                || !array_is_list($item) || count($item) !== 2) continue;
+            $bytes = [];
+            foreach ($item as $value) {
+                if (!is_int($value) && !(is_string($value) && ctype_digit($value))) continue 2;
+                $count = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+                if ($count === false) continue 2;
+                $bytes[] = $count;
+            }
+            $data[$id] = $bytes;
+        }
 
         if (empty($data)) {
             return;
@@ -433,13 +460,20 @@ class ServerService
      */
     public static function getServer($serverId, ?string $serverType = null): Server | null
     {
+        if ((!is_int($serverId) && !is_string($serverId)) || $serverId === '') {
+            return null;
+        }
+        $serverId = (string) $serverId;
         return Server::query()->useWritePdo()
             ->when($serverType, function ($query) use ($serverType) {
                 $query->where('type', Server::normalizeType($serverType));
             })
             ->where(function ($query) use ($serverId) {
-                $query->where('code', $serverId)
-                    ->orWhere('id', $serverId);
+                $query->where('code', $serverId);
+                $id = filter_var(ltrim($serverId, '0'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if (ctype_digit($serverId) && $id !== false) {
+                    $query->orWhere('id', $id);
+                }
             })
             ->orderByRaw('CASE WHEN code = ? THEN 0 ELSE 1 END', [$serverId])
             ->first();

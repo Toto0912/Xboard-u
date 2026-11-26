@@ -1,7 +1,8 @@
 import { toast } from 'sonner';
 import i18n from '@/i18n';
 import { getPanelSettings } from '@/lib/settings';
-import { getStoredToken, removeStoredToken } from '@/lib/storage';
+import { getStoredToken } from '@/lib/storage';
+import { useAuthStore } from '@/stores/auth';
 
 const AUTH_ALLOWLIST = new Set([
   '/passport/auth/login',
@@ -47,11 +48,11 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 function redirectToSignIn(): void {
-  removeStoredToken();
+  useAuthStore.getState().logout();
   const hash = window.location.hash.replace(/^#/, '') || '/';
   if (!hash.startsWith('/sign-in')) {
     const redirect = encodeURIComponent(hash);
-    window.location.hash = `#/sign-in?redirect=${redirect}`;
+    window.location.replace(`#/sign-in?redirect=${redirect}`);
   }
 }
 
@@ -114,7 +115,8 @@ export async function apiRequest<T = unknown>(
   }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
+    if (requiresAuth && token === getStoredToken()
+      && (response.status === 401 || (response.status === 403 && payload?.message === 'Unauthorized'))) {
       redirectToSignIn();
     }
 
@@ -198,14 +200,14 @@ export async function adminApiDownload(
   });
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      redirectToSignIn();
-    }
     let message = i18n.t('http.unknownError');
     try {
       const errJson = (await response.json()) as { message?: string; errors?: Record<string, string[]> };
       const firstErr = errJson?.errors ? Object.values(errJson.errors).flat()[0] : undefined;
       message = firstErr || errJson?.message || message;
+      if (token === getStoredToken() && (response.status === 401 || (response.status === 403 && errJson?.message === 'Unauthorized'))) {
+        redirectToSignIn();
+      }
     } catch {
       // ignore non-json error body
     }

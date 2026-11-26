@@ -13,6 +13,7 @@ class TicketController extends Controller
 {
     private function applyFiltersAndSorts(Request $request, $builder)
     {
+        \App\Support\AdminListQuery::validate($request, 'id user_id subject level reply_status status created_at updated_at');
         if ($request->has('filter')) {
             collect($request->input('filter'))->each(function ($filter) use ($builder) {
                 $key = $filter['id'];
@@ -30,7 +31,7 @@ class TicketController extends Controller
         if ($request->has('sort')) {
             collect($request->input('sort'))->each(function ($sort) use ($builder) {
                 $key = $sort['id'];
-                $value = $sort['desc'] ? 'DESC' : 'ASC';
+                $value = filter_var($sort['desc'], FILTER_VALIDATE_BOOLEAN) ? 'DESC' : 'ASC';
                 $builder->orderBy($key, $value);
             });
         }

@@ -81,8 +81,15 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
 
     public function notify($params): array|bool
     {
-        if ($params['trade_status'] !== 'TRADE_SUCCESS')
+        if (!is_array($params) || ($params['trade_status'] ?? null) !== 'TRADE_SUCCESS'
+            || !is_string($params['app_id'] ?? null) || $params['app_id'] === ''
+            || $params['app_id'] !== (string) $this->getConfig('app_id')
+            || !is_string($params['sign'] ?? null)
+            || !is_string($params['out_trade_no'] ?? null) || trim($params['out_trade_no']) === ''
+            || !is_string($params['trade_no'] ?? null) || trim($params['trade_no']) === ''
+            || !(is_string($params['total_amount'] ?? null) || is_int($params['total_amount'] ?? null))) {
             return false;
+        }
 
         $gateway = new AlipayF2F();
         $gateway->setAppId($this->getConfig('app_id'));
@@ -95,7 +102,7 @@ class Plugin extends AbstractPlugin implements PaymentAttemptInterface
                     'trade_no' => $params['out_trade_no'],
                     'callback_no' => $params['trade_no'],
                     'transaction_no' => $params['trade_no'],
-                    'verified_order_gross' => $params['total_amount'] ?? null,
+                    'verified_order_gross' => $params['total_amount'],
                 ];
             } else {
                 return false;

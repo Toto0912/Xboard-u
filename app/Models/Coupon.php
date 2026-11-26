@@ -18,11 +18,18 @@ class Coupon extends Model
         'show' => 'boolean',
     ];
 
+    public function setLimitPeriodAttribute(?array $periods): void
+    {
+        $this->attributes['limit_period'] = $periods === null ? null : json_encode(array_values(array_unique(
+            array_map([PlanService::class, 'getPeriodKey'], $periods)
+        )));
+    }
+
     public function getLimitPeriodAttribute($value)
     {
         return collect(json_decode((string) $value, true))->map(function ($item) {
             return PlanService::getPeriodKey($item);
-        })->toArray();
+        })->unique()->values()->all();
     }
 
 }

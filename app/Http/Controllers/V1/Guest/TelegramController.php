@@ -24,8 +24,16 @@ class TelegramController extends Controller
 
     public function webhook(Request $request): void
     {
-        $expectedToken = md5(admin_setting('telegram_bot_token'));
-        if ($request->input('access_token') !== $expectedToken) {
+        $token = (string) admin_setting('telegram_bot_token');
+        if (!(bool) admin_setting('telegram_bot_enable', false) || blank($token)) {
+            throw new ApiException('Telegram webhook disabled', 401);
+        }
+        $digest = admin_setting('telegram_webhook_digest');
+        // Existing registrations use a URL credential until an administrator re-registers the bot.
+        $valid = filled($digest)
+            ? hash_equals($digest, hash_hmac('sha256', (string) $request->header('X-Telegram-Bot-Api-Secret-Token'), $token))
+            : (is_string($legacy = $request->query('access_token')) && hash_equals(md5($token), $legacy));
+        if (!$valid) {
             throw new ApiException('access_token is error', 401);
         }
 
@@ -92,6 +100,12 @@ class TelegramController extends Controller
         ];
 
         if (isset($message['reply_to_message']['text'])) {
+            $botId = explode(':', (string) admin_setting('telegram_bot_token'), 2)[0];
+            $reply = $message['reply_to_message'];
+            $this->msg->reply_from_bot = !empty($reply['from']['is_bot'])
+                && (string) ($reply['from']['id'] ?? '') === $botId
+                && (string) ($message['from']['id'] ?? '') === (string) $this->msg->chat_id
+                && !isset($reply['forward_origin']) && !isset($reply['via_bot']);
             $this->msg->message_type = 'reply_message';
             $this->msg->reply_text = $message['reply_to_message']['text'];
         }

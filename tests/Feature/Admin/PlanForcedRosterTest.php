@@ -30,6 +30,7 @@ class PlanForcedRosterTest extends TestCase
         $node = Server::withoutEvents(fn () => Server::create(['name' => 'roster', 'type' => 'vless',
             'host' => 'example.test', 'port' => 443, 'server_port' => 443, 'rate' => 1,
             'group_ids' => $groups]));
+        Cache::put(\App\WebSocket\NodeWorker::HEARTBEAT_CACHE_KEY, time(), 30);
         if ($online) Cache::put("node_ws_alive:{$node->id}", true, 60);
         return $node->id;
     }

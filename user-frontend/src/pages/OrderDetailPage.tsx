@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CircleX, ExternalLink, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -68,23 +68,32 @@ export default function OrderDetailPage() {
 
   useEffect(() => {
     if (!polling || !trade_no) return;
+    let pending = false;
+    let active = true;
     const timer = window.setInterval(async () => {
+      if (pending) return;
+      pending = true;
       try {
         const status = await checkOrderStatus(trade_no);
-        if (status === 3 || status === 1 || status === 4) {
+        if (!active) return;
+        if (status === 1) {
+          void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
+        } else if ([2, 3, 4].includes(status)) {
           setPolling(false);
           setQrUrl(null);
           setRedirectPayUrl(null);
-          toast.success(t('order.paidSuccess'));
+          if (status !== 2) toast.success(t('order.paidSuccess'));
           void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
           void queryClient.invalidateQueries({ queryKey: ['user-subscribe'] });
           void queryClient.invalidateQueries({ queryKey: ['user-stat'] });
         }
       } catch {
-        // ignore transient poll error
+        // Retry transient errors on the next interval.
+      } finally {
+        pending = false;
       }
     }, 3000);
-    return () => window.clearInterval(timer);
+    return () => { active = false; window.clearInterval(timer); };
   }, [polling, trade_no, queryClient, t]);
 
   const activeMethodObj = useMemo(
@@ -98,6 +107,8 @@ export default function OrderDetailPage() {
     const pct = Number(activeMethodObj.handling_fee_percent ?? 0);
     return Math.round((order.total_amount * pct) / 100 + fixed);
   }, [order, activeMethodObj]);
+
+  const displayedFee = order?.status === 0 ? estimatedFee : Number(order?.handling_amount ?? 0);
 
   const checkoutMutation = useMutation({
     mutationFn: () =>
@@ -114,9 +125,17 @@ export default function OrderDetailPage() {
         setQrUrl(res.data);
         setPolling(true);
       } else if (res.type === 1 && typeof res.data === 'string') {
-        setRedirectPayUrl(res.data);
+        let destination: URL;
+        try {
+          destination = new URL(res.data);
+          if (!['https:', 'http:'].includes(destination.protocol) || destination.username || destination.password) throw new Error();
+        } catch {
+          toast.error(t('order.invalidPaymentLink', { defaultValue: 'Invalid payment link' }));
+          return;
+        }
+        setRedirectPayUrl(destination.href);
         setPolling(true);
-        window.open(res.data, '_blank', 'noopener,noreferrer');
+        window.open(destination.href, '_blank', 'noopener,noreferrer');
       }
     },
   });
@@ -126,6 +145,9 @@ export default function OrderDetailPage() {
     onSuccess: () => {
       toast.success(t('order.cancelSuccess'));
       setCancelOpen(false);
+      setPolling(false);
+      setQrUrl(null);
+      setRedirectPayUrl(null);
       void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
       void queryClient.invalidateQueries({ queryKey: ['user-orders'] });
     },
@@ -189,11 +211,11 @@ export default function OrderDetailPage() {
                   <span className="font-mono">-{formatCurrency(order.surplus_amount, symbol)}</span>
                 </div>
               )}
-              {(order.handling_amount ?? estimatedFee) > 0 && (
+              {displayedFee > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t('order.handlingFee')}</span>
                   <span className="font-mono">
-                    {formatCurrency(order.handling_amount ?? estimatedFee, symbol)}
+                    {formatCurrency(displayedFee, symbol)}
                   </span>
                 </div>
               )}
@@ -201,7 +223,7 @@ export default function OrderDetailPage() {
                 <span>{t('order.amount')}</span>
                 <span className="font-mono">
                   {formatCurrency(
-                    order.total_amount + (order.status === 0 ? estimatedFee : Number(order.handling_amount ?? 0)),
+                    order.total_amount + displayedFee,
                     symbol,
                   )}
                 </span>
@@ -274,7 +296,9 @@ export default function OrderDetailPage() {
           ) : (
             <Card>
               <CardContent className="flex h-full flex-col items-center justify-center gap-2 py-10 text-center">
-                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                {order.status === 2 ? <CircleX className="h-8 w-8 text-muted-foreground" />
+                  : order.status === 1 ? <Loader2 className="h-8 w-8 animate-spin" />
+                  : <CheckCircle2 className="h-8 w-8 text-emerald-500" /> }
                 <div className="text-sm font-medium">
                   {t(`order.statuses.${order.status}`, { defaultValue: String(order.status) })}
                 </div>

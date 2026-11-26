@@ -85,27 +85,20 @@ class ManageController extends Controller
         if (isset($params['cdn_settings'])) {
             $params['cdn_settings']['enabled'] = (bool) ($params['cdn_settings']['enabled'] ?? false);
         }
-        if ($request->input('id')) {
-            $server = Server::find($request->input('id'));
-            if (!$server) {
-                return $this->fail([400202, '服务器不存在']);
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request, $params) {
+            if (!empty($params['parent_id']) && ((int) $params['parent_id'] === (int) $request->input('id')
+                || !Server::query()->lockForUpdate()->find($params['parent_id'], ['id']))) {
+                return $this->fail([422, '请选择有效的父节点']);
             }
-            try {
+            if ($request->input('id')) {
+                $server = Server::query()->lockForUpdate()->find($request->input('id'));
+                if (!$server) return $this->fail([400202, '服务器不存在']);
                 $server->update($params);
-                return $this->success(true);
-            } catch (\Exception $e) {
-                Log::error($e);
-                return $this->fail([500, '保存失败']);
+            } else {
+                Server::create($params);
             }
-        }
-
-        try {
-            Server::create($params);
             return $this->success(true);
-        } catch (\Exception $e) {
-            Log::error($e);
-            return $this->fail([500, '创建失败']);
-        }
+        }, 3);
     }
 
     public function update(Request $request)
@@ -149,15 +142,7 @@ class ManageController extends Controller
         $request->validate([
             'id' => 'required|integer',
         ]);
-        $server = Server::find($request->id);
-        if (!$server) {
-            return $this->fail([400202, '服务器不存在']);
-        }
-        if ($server->delete() === false) {
-            return $this->fail([500, '删除失败']);
-        }
-
-        return $this->success(true);
+        return $this->deleteNodes([(int) $request->id], true);
     }
 
     /**
@@ -177,16 +162,22 @@ class ManageController extends Controller
             return $this->fail([400, '请选择要删除的节点']);
         }
 
-        try {
-            $deleted = Server::whereIn('id', $ids)->delete();
-            if ($deleted === false) {
-                return $this->fail([500, '批量删除失败']);
+        return $this->deleteNodes($ids);
+    }
+
+    private function deleteNodes(array $ids, bool $single = false)
+    {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($ids, $single) {
+            $nodes = Server::query()->whereIntegerInRaw('id', $ids)->orderBy('id')->lockForUpdate()->get();
+            if ($single && $nodes->isEmpty()) return $this->fail([400202, '服务器不存在']);
+            if (Server::query()->whereIntegerInRaw('parent_id', $ids)->whereIntegerNotInRaw('id', $ids)->exists()) {
+                return $this->fail([422, '请先迁移或一并删除子节点']);
+            }
+            foreach ($nodes as $node) {
+                if ($node->delete() === false) throw new \RuntimeException('Node deletion cancelled');
             }
             return $this->success(true);
-        } catch (\Exception $e) {
-            Log::error($e);
-            return $this->fail([500, '批量删除失败']);
-        }
+        }, 3);
     }
 
     /**
@@ -311,6 +302,8 @@ class ManageController extends Controller
 
         $copiedServer = $server->replicate();
         $copiedServer->show = 0;
+        $copiedServer->enabled = false;
+        $copiedServer->machine_id = null;
         $copiedServer->code = null;
         $copiedServer->u = 0;
         $copiedServer->d = 0;

@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Utils\Helper;
 use Illuminate\Support\Arr;
 use App\Support\AbstractProtocol;
+use App\Support\NaiveSubscription;
 
 class General extends AbstractProtocol
 {
@@ -21,6 +22,7 @@ class General extends AbstractProtocol
         Server::TYPE_SOCKS,
         Server::TYPE_TUIC,
         Server::TYPE_HTTP,
+        Server::TYPE_NAIVE,
     ];
 
     protected $protocolRequirements = [
@@ -45,12 +47,28 @@ class General extends AbstractProtocol
                 Server::TYPE_SOCKS => self::buildSocks($item['password'], $item),
                 Server::TYPE_TUIC => self::buildTuic($item['password'], $item),
                 Server::TYPE_HTTP => self::buildHttp($item['password'], $item),
+                Server::TYPE_NAIVE => $this->buildNaive($item),
                 default => '',
             };
         }
         return response(base64_encode($uri))
             ->header('content-type', 'text/plain')
             ->header('subscription-userinfo', "upload={$user['u']}; download={$user['d']}; total={$user['transfer_enable']}; expire={$user['expired_at']}");
+    }
+
+    private function buildNaive(array $server): string
+    {
+        if (!$this->supportsFeature('v2rayn', '7.20.4') || data_get($server, 'protocol_settings.tls_settings.ech.enabled')) {
+            return '';
+        }
+        $out = NaiveSubscription::from($this->user, $server);
+        if ($out === null) {
+            return '';
+        }
+        $address = Helper::wrapIPv6($out['server']);
+        $query = http_build_query(['security' => 'tls', 'sni' => $out['tls']['server_name'] ?? null], '', '&', PHP_QUERY_RFC3986);
+        return sprintf("naive+https://%s:%s@%s:%d?%s#%s\r\n", rawurlencode($out['username']),
+            rawurlencode($out['password']), $address, $out['server_port'], $query, rawurlencode($server['name']));
     }
 
     public static function buildShadowsocks($password, $server)
@@ -160,7 +178,6 @@ class General extends AbstractProtocol
         $name = $server['name']; //节点名称
 
         $config = [
-            'mode' => 'multi', //grpc传输模式
             'security' => '', //传输层安全 tls/reality
             'encryption' => match (data_get($protocol_settings, 'encryption.enabled')) {
                 true => data_get($protocol_settings, 'encryption.encryption', 'none'),
@@ -206,6 +223,7 @@ class General extends AbstractProtocol
                     $config['host'] = $wsHost;
                 break;
             case 'grpc':
+                $config['mode'] = data_get($protocol_settings, 'network_settings.multiMode', false) ? 'multi' : 'gun';
                 if ($path = data_get($protocol_settings, 'network_settings.serviceName'))
                     $config['serviceName'] = $path;
                 break;
@@ -218,8 +236,8 @@ class General extends AbstractProtocol
                 break;
             case 'kcp':
                 if ($path = data_get($protocol_settings, 'network_settings.seed'))
-                    $config['path'] = $path;
-                $config['type'] = data_get($protocol_settings, 'network_settings.header.type', 'none');
+                    $config['seed'] = $path;
+                $config['headerType'] = data_get($protocol_settings, 'network_settings.header.type', 'none');
                 break;
             case 'httpupgrade':
                 if ($path = data_get($protocol_settings, 'network_settings.path'))
@@ -325,7 +343,7 @@ class General extends AbstractProtocol
     {
         $protocol_settings = $server['protocol_settings'];
         $params = [];
-        $version = data_get($protocol_settings, 'version', 2);
+        $version = (int) data_get($protocol_settings, 'version', 2);
 
         if ($serverName = data_get($protocol_settings, 'tls.server_name')) {
             $params['sni'] = $serverName;
@@ -337,7 +355,10 @@ class General extends AbstractProtocol
 
         if ($version === 2) {
             if (data_get($protocol_settings, 'obfs.open')) {
-                $params['obfs'] = 'salamander';
+                $params['obfs'] = data_get($protocol_settings, 'obfs.type', 'salamander');
+                if (!in_array($params['obfs'], ['salamander', 'gecko'], true)) {
+                    return '';
+                }
                 $params['obfs-password'] = data_get($protocol_settings, 'obfs.password');
             }
             if (isset($server['ports'])) {

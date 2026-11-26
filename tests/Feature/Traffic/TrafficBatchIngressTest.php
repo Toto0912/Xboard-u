@@ -208,9 +208,86 @@ class TrafficBatchIngressTest extends TestCase
         $this->postJson('/api/v2/server/report', $auth + ['status' => ['cpu' => 34]])->assertOk();
         $key = CacheKey::get('SERVER_' . strtoupper($this->node->type) . '_LOAD_STATUS', $this->node->id);
         $this->assertEquals(34, cache($key)['cpu']);
+        $this->assertDatabaseHas('v2_traffic_batches', ['server_id' => $this->node->id, 'raw_u' => 11, 'raw_d' => 17]);
+        $this->assertDatabaseCount('v2_traffic_batch_tasks', 4);
+    }
+
+    public function test_legacy_report_is_atomic_across_chunks_and_uses_the_original_plugin_contract(): void
+    {
+        $calls = [];
+        HookManager::registerFilter('traffic.process.before', function ($input) use (&$calls) {
+            $calls[] = count($input[2]);
+            $this->assertArrayNotHasKey('traffic_batch', $input[0]);
+            $input[0]['rate'] = 2;
+            return $input;
+        });
+        HookManager::registerFilter('traffic.before_process', function ($input) use (&$calls) {
+            $calls[] = count($input[2]);
+            return $input;
+        });
+        $buyer = \App\Models\User::withoutEvents(fn () => \App\Models\User::create([
+            'email' => 'audit@traffic.test', 'uuid' => (string) \Illuminate\Support\Str::uuid(),
+            'token' => 'fixture', 'password' => 'fixture',
+        ]));
+        $rows = array_fill_keys(range($buyer->id, $buyer->id + 1000), [2, 3]);
+        DB::beginTransaction();
+        \App\Services\ServerService::processTraffic($this->node, $rows);
+        $this->assertDatabaseCount('v2_traffic_batches', 2);
+        Bus::assertNotDispatched(\App\Jobs\ProcessTrafficBatchTask::class);
+        DB::commit();
+        Bus::assertDispatchedTimes(\App\Jobs\ProcessTrafficBatchTask::class, 6);
+        $this->assertSame([1001, 1001], $calls);
+        $tasks = DB::table('v2_traffic_batch_tasks')->orderBy('id')->get();
+        foreach ($tasks as $task) {
+            $job = new \App\Jobs\ProcessTrafficBatchTask($task->receipt_id, $task->id);
+            $job->handle();
+            $job->handle();
+        }
+        $this->assertDatabaseCount('v2_traffic_batch_tasks', 0);
+        $this->assertSame(2, DB::table('v2_traffic_batches')->whereNotNull('completed_at')->count());
+        $this->assertEquals(4, $buyer->fresh()->u);
+        $this->assertEquals(6, $buyer->fresh()->d);
+        $this->assertDatabaseHas('v2_stat_user', ['user_id' => $buyer->id, 'u' => 4, 'd' => 6]);
+        $this->assertEquals(2002, $this->node->fresh()->u);
+        $this->assertEquals(3003, $this->node->fresh()->d);
+        $this->assertDatabaseHas('v2_stat_server', ['server_id' => $this->node->id, 'u' => 2002, 'd' => 3003]);
+        \App\Services\ServerService::processTraffic($this->node, $rows);
+        $this->assertDatabaseCount('v2_traffic_batches', 4);
+    }
+
+    public function test_legacy_late_chunk_failure_leaves_no_receipts_or_dispatches(): void
+    {
+        if (DB::getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('SQLite abort trigger');
+        }
+        DB::unprepared("CREATE TRIGGER fail_legacy_receipt BEFORE INSERT ON v2_traffic_batches WHEN (SELECT COUNT(*) FROM v2_traffic_batches) >= 1 BEGIN SELECT RAISE(ABORT, 'injected failure'); END");
+        try {
+            \App\Services\ServerService::processTraffic($this->node, array_fill_keys(range(1, 1001), [1, 2]));
+            $this->fail('The second receipt should have failed');
+        } catch (\Illuminate\Database\QueryException $e) {
+            $this->assertStringContainsString('injected failure', $e->getMessage());
+        }
+        $this->assertDatabaseCount('v2_traffic_batches', 0);
+        $this->assertDatabaseCount('v2_traffic_batch_tasks', 0);
+        Bus::assertNotDispatched(\App\Jobs\ProcessTrafficBatchTask::class);
+    }
+
+    public function test_legacy_unmigrated_or_noninteger_plugin_payload_preserves_old_queues(): void
+    {
+        HookManager::registerFilter('traffic.process.before', function ($args) {
+            $args[2] = [1 => [2.5, 1]];
+            return $args;
+        });
+        \App\Services\ServerService::processTidalabTraffic($this->node, [
+            ['user_id' => 1, 'u' => -1, 'd' => 0], ['user_id' => 2, 'u' => '7', 'd' => 4],
+        ]);
         Bus::assertDispatchedTimes(TrafficFetchJob::class, 1);
-        Bus::assertDispatchedTimes(StatUserJob::class, 1);
-        Bus::assertDispatchedTimes(StatServerJob::class, 1);
+        $this->assertDatabaseCount('v2_traffic_batches', 0);
+        DB::table('migrations')->where('migration', '2026_11_26_000001_create_traffic_batches')->delete();
+        \App\Services\ServerService::processTraffic($this->node, [2 => [7, 4]]);
+        Bus::assertDispatchedTimes(TrafficFetchJob::class, 2);
+        Bus::assertDispatchedTimes(StatUserJob::class, 2);
+        Bus::assertDispatchedTimes(StatServerJob::class, 2);
         $this->assertDatabaseCount('v2_traffic_batches', 0);
     }
 

@@ -5,8 +5,9 @@ namespace App\Observers;
 use App\Models\Server;
 use App\Models\ServerRoute;
 use App\Services\NodeSyncService;
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 
-class ServerRouteObserver
+class ServerRouteObserver implements ShouldHandleEventsAfterCommit
 {
     public function updated(ServerRoute $route): void
     {
@@ -20,7 +21,7 @@ class ServerRouteObserver
 
     private function notifyAffectedNodes(int $routeId): void
     {
-        $servers = Server::where('show', 1)->get()->filter(
+        $servers = Server::query()->useWritePdo()->where('enabled', true)->get()->filter(
             fn ($s) => in_array($routeId, $s->route_ids ?? [])
         );
 

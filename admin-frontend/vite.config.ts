@@ -36,7 +36,6 @@ export default defineConfig(({ command, mode }) => {
               '@radix-ui/react-tabs',
               '@radix-ui/react-tooltip',
             ],
-            charts: ['recharts'],
           },
         },
       },

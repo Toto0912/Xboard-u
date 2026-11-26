@@ -19,7 +19,7 @@ class NodeEventHandlers
      */
     public static function handlePong(TcpConnection $conn, int $nodeId, array $data = []): void
     {
-        Cache::put("node_ws_alive:{$nodeId}", true, 86400);
+        Cache::put("node_ws_alive:{$nodeId}", $conn->wsOwner, NodeWorker::CONNECTION_TTL);
     }
 
     /**
@@ -71,9 +71,9 @@ class NodeEventHandlers
         self::pushDeviceStateToNodes([$nodeId], $service);
     }
 
-    public static function pushDeviceStateToNodes(array $nodeIds, DeviceStateService $service): void
+    public static function pushDeviceStateToNodes(array $nodeIds, DeviceStateService $service, ?callable $publish = null): void
     {
-        $onlineIds = array_filter($nodeIds, static fn ($id) => NodeRegistry::get((int) $id) !== null);
+        $onlineIds = $publish ? $nodeIds : array_filter($nodeIds, static fn ($id) => NodeRegistry::get((int) $id) !== null);
         if (!$onlineIds) return;
 
         $nodes = Server::query()->useWritePdo()->findMany($onlineIds);
@@ -89,7 +89,11 @@ class NodeEventHandlers
             $userIds = ServerService::getAvailableUsers($batch->first())->pluck('id')->all();
             $devices = $service->getUsersDevices($userIds);
             foreach ($batch as $node) {
-                NodeRegistry::send($node->id, 'sync.devices', ['users' => $devices]);
+                if ($publish) {
+                    $publish($node->id, $devices);
+                } else {
+                    NodeRegistry::send($node->id, 'sync.devices', ['users' => $devices]);
+                }
                 Log::debug("[WS] Pushed device state to node#{$node->id}: " . count($devices) . " users");
             }
         }

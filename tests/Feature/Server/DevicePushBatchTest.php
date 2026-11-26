@@ -27,6 +27,22 @@ class DevicePushBatchTest extends TestCase
         $this->verifyDelivery(true);
     }
 
+    public function test_pending_node_can_be_delivered_by_another_worker(): void
+    {
+        $node = Server::withoutEvents(fn () => Server::create([
+            'name' => 'remote owner', 'group_ids' => [], 'type' => 'vless',
+            'rate' => 1, 'host' => '127.0.0.1', 'port' => 443, 'server_port' => 443,
+        ]));
+        $this->assertNull(NodeRegistry::get($node->id));
+        $service = $this->mock(DeviceStateService::class);
+        $service->shouldReceive('getUsersDevices')->once()->with([])->andReturn([]);
+        $deliveries = [];
+        NodeEventHandlers::pushDeviceStateToNodes([$node->id], $service, static function (int $id, array $devices) use (&$deliveries) {
+            $deliveries[$id] = $devices;
+        });
+        $this->assertSame([$node->id => []], $deliveries);
+    }
+
     private function verifyDelivery(bool $withFilter): void
     {
         foreach ([1, 2, 3] as $id) {

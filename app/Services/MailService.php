@@ -8,7 +8,7 @@ use App\Models\MailTemplate;
 use App\Models\User;
 use App\Utils\CacheKey;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
+
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -239,15 +239,6 @@ class MailService
      */
     public static function sendEmail(array $params)
     {
-        if (admin_setting('email_host')) {
-            Config::set('mail.host', admin_setting('email_host', config('mail.host')));
-            Config::set('mail.port', admin_setting('email_port', config('mail.port')));
-            Config::set('mail.encryption', admin_setting('email_encryption', config('mail.encryption')));
-            Config::set('mail.username', admin_setting('email_username', config('mail.username')));
-            Config::set('mail.password', admin_setting('email_password', config('mail.password')));
-            Config::set('mail.from.address', admin_setting('email_from_address', config('mail.from.address')));
-            Config::set('mail.from.name', admin_setting('app_name', 'XBoard'));
-        }
         $email = $params['email'];
         $subject = $params['subject'];
         $templateName = $params['template_name'];
@@ -282,19 +273,20 @@ class MailService
         }
 
         try {
+            $mailer = self::deliveryMailer();
             if ($dbTemplate) {
                 $renderVars = self::buildSafeVars($templateValue);
                 $renderedSubject = self::renderPlaceholders($dbTemplate->subject, $renderVars);
                 $renderedContent = self::renderPlaceholders($dbTemplate->content, $renderVars);
                 $subject = $renderedSubject ?: $subject;
 
-                Mail::html($renderedContent, function ($message) use ($email, $subject) {
+                $mailer->html($renderedContent, function ($message) use ($email, $subject) {
                     $message->to($email)->subject($subject);
                 });
                 $params['template_name'] = 'db:' . $templateName;
             } else {
                 $params['template_name'] = 'mail.default.' . $templateName;
-                Mail::send(
+                $mailer->send(
                     $params['template_name'],
                     $params['template_value'],
                     function ($message) use ($email, $subject) {
@@ -304,18 +296,41 @@ class MailService
             }
             $error = null;
         } catch (\Exception $e) {
-            Log::error($e);
-            $error = $e->getMessage();
+            Log::error('Mail delivery failed', ['exception' => $e::class]);
+            $error = 'Mail delivery failed';
         }
         $log = [
             'email' => $params['email'],
             'subject' => $params['subject'],
             'template_name' => $params['template_name'],
             'error' => $error,
-            'config' => config('mail')
         ];
-        MailLog::create($log);
+        try {
+            MailLog::create($log);
+        } catch (\Throwable $e) {
+            Log::warning('Mail delivery log write failed', ['exception' => $e::class]);
+        }
         return $log;
+    }
+
+    private static function deliveryMailer()
+    {
+        $manager = Mail::getFacadeRoot();
+        if (!($host = admin_setting('email_host'))) return $manager;
+        $config = config('mail');
+        $config['host'] = $host;
+        foreach (['port', 'encryption', 'username', 'password'] as $key) {
+            $config[$key] = admin_setting('email_' . $key, $config[$key] ?? null);
+        }
+        $config['from'] = [
+            'address' => admin_setting('email_from_address', config('mail.from.address')),
+            'name' => admin_setting('app_name', 'XBoard'),
+        ];
+        $mailer = $manager->build($config);
+        foreach (['from' => 'alwaysFrom', 'to' => 'alwaysTo', 'reply_to' => 'alwaysReplyTo', 'return_path' => 'alwaysReturnPath'] as $key => $method) {
+            if (!empty($config[$key]['address'])) $mailer->$method($config[$key]['address'], $config[$key]['name'] ?? null);
+        }
+        return $mailer;
     }
 
     /**

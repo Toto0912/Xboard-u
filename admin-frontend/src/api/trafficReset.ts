@@ -60,10 +60,10 @@ export async function fetchTrafficResetLogs(params: {
   };
 }
 
-export async function resetUserTraffic(user_id: number, reason?: string): Promise<boolean> {
+export async function resetUserTraffic(user_id: number, reason?: string, operation_id?: string): Promise<boolean> {
   await adminApiRequest('/traffic-reset/reset-user', {
     method: 'POST',
-    body: reason ? { user_id, reason } : { user_id },
+    body: { user_id, reason, operation_id },
   });
   return true;
 }

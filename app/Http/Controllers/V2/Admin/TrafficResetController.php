@@ -148,20 +148,20 @@ class TrafficResetController extends Controller
     $request->validate([
       'user_id' => 'required|integer|exists:v2_user,id',
       'reason' => 'nullable|string|max:255',
+      'operation_id' => 'sometimes|uuid',
     ]);
 
     $user = User::find($request->user_id);
 
-            if (!$this->trafficResetService->canReset($user)) {
-            return response()->json([
-                'message' => __('traffic_reset.user_cannot_reset')
-            ], 400);
-        }
+    if (!$user) return response()->json(['message' => __('traffic_reset.user_cannot_reset')], 404);
+    if (!$request->filled('operation_id') && !$this->trafficResetService->canReset($user)) {
+      return response()->json(['message' => __('traffic_reset.user_cannot_reset')], 400);
+    }
 
-    $metadata = [];
+    $metadata = ['admin_id' => $request->user()?->id];
+    if ($request->filled('operation_id')) $metadata['operation_id'] = $request->input('operation_id');
     if ($request->filled('reason')) {
       $metadata['reason'] = $request->reason;
-      $metadata['admin_id'] = auth()->user()?->id;
     }
 
     $success = $this->trafficResetService->manualReset($user, $metadata);

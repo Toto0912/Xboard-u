@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { GuestConfig } from '@/api/guest';
 
 declare global {
@@ -22,32 +23,26 @@ export interface CaptchaHandle {
   reset: () => void;
 }
 
+const scripts = new Map<string, Promise<void>>();
+
 function loadScriptOnce(src: string, id: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById(id) as HTMLScriptElement | null;
-    if (existing) {
-      if (existing.dataset.loaded === 'true') {
-        resolve();
-        return;
-      }
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), {
-        once: true,
-      });
-      return;
-    }
+  const pending = scripts.get(src);
+  if (pending) return pending;
+  const promise = new Promise<void>((resolve, reject) => {
     const script = document.createElement('script');
     script.id = id;
     script.src = src;
     script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      script.dataset.loaded = 'true';
-      resolve();
+    script.onload = () => resolve();
+    script.onerror = () => {
+      script.remove();
+      scripts.delete(src);
+      reject(new Error('Captcha failed to load'));
     };
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.head.appendChild(script);
   });
+  scripts.set(src, promise);
+  return promise;
 }
 
 export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>(
@@ -56,6 +51,9 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
     const widgetIdRef = useRef<string | number | null>(null);
     const [token, setToken] = useState('');
 
+    const { t } = useTranslation();
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [retry, setRetry] = useState(0);
     const enabled = Boolean(config?.is_captcha);
     const type = config?.captcha_type || 'recaptcha';
 
@@ -64,6 +62,7 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
       let cancelled = false;
 
       async function setup() {
+        setLoadFailed(false);
         setToken('');
         if (type === 'turnstile' && config?.turnstile_site_key) {
           await loadScriptOnce(
@@ -101,12 +100,12 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
       }
 
       void setup().catch(() => {
-        // ignore external script load failures cleanly
+        if (!cancelled) setLoadFailed(true);
       });
 
       return () => {
         cancelled = true;
-        if (type === 'turnstile' && widgetIdRef.current && window.turnstile) {
+        if (type === 'turnstile' && widgetIdRef.current !== null && window.turnstile) {
           try {
             window.turnstile.remove(String(widgetIdRef.current));
           } catch {
@@ -117,6 +116,7 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
       };
     }, [
       enabled,
+      retry,
       type,
       config?.turnstile_site_key,
       config?.recaptcha_site_key,
@@ -148,7 +148,7 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
       },
       reset: () => {
         setToken('');
-        if (type === 'turnstile' && widgetIdRef.current && window.turnstile) {
+        if (type === 'turnstile' && widgetIdRef.current !== null && window.turnstile) {
           window.turnstile.reset(String(widgetIdRef.current));
         } else if (type === 'recaptcha' && widgetIdRef.current !== null && window.grecaptcha) {
           window.grecaptcha.reset(Number(widgetIdRef.current));
@@ -156,6 +156,7 @@ export const CaptchaWidget = forwardRef<CaptchaHandle, { config?: GuestConfig }>
       },
     }));
 
+    if (enabled && loadFailed) return <button type="button" className="text-sm underline" onClick={() => { setLoadFailed(false); setRetry((n) => n + 1); }}>{t('common.retry', { defaultValue: 'Retry' })}</button>;
     if (!enabled || type === 'recaptcha-v3') return null;
 
     return <div ref={containerRef} className="flex min-h-[65px] items-center justify-center" />;

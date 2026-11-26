@@ -40,6 +40,7 @@ class NodeUserAuthorizationTest extends TestCase
             'name' => 'node-access', 'type' => 'vless', 'host' => 'example.test',
             'port' => 443, 'server_port' => 443, 'rate' => 1, 'group_ids' => ['7', 8],
         ]));
+        Cache::put(\App\WebSocket\NodeWorker::HEARTBEAT_CACHE_KEY, time(), 30);
         Cache::put("node_ws_alive:{$node->id}", true, 60);
         return $node;
     }

@@ -64,7 +64,8 @@ export default function SignInPage() {
     defaultValues: { email: '', password: '' },
   });
 
-  const redirectTarget = searchParams.get('redirect') || '/';
+  const target = searchParams.get('redirect') || '/';
+  const redirectTarget = /^\/(?!\/)/.test(target) && !/[\\\u0000-\u0020]/.test(target) && !target.startsWith('/sign-in') ? target : '/';
 
   useEffect(() => {
     if (token) {

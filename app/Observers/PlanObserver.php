@@ -24,7 +24,8 @@ class PlanObserver
                     ->orWhereNull('expired_at');
             })
             ->lazyById(500)
-            ->each(function (User $user) use ($trafficResetService) {
+            ->each(function (User $user) use ($trafficResetService, $plan) {
+                $user->setRelation('plan', $plan);
                 $nextResetTime = $trafficResetService->calculateNextResetTime($user);
                 $user->update([
                     'next_reset_at' => $nextResetTime?->timestamp,

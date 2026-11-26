@@ -38,6 +38,19 @@ final class CdnSettingsTest extends TestCase
         return '/api/v2/' . hash('crc32b', config('app.key')) . '/server/manage';
     }
 
+    public function test_managed_shadowsocks_rejects_single_user_chacha_and_accepts_both_aes_methods(): void
+    {
+        foreach (['2022-blake3-chacha20-poly1305' => 422, '2022-blake3-aes-128-gcm' => 200, '2022-blake3-aes-256-gcm' => 200] as $cipher => $status) {
+            $payload = $this->payload();
+            $payload['type'] = 'shadowsocks';
+            unset($payload['cdn_settings']);
+            $payload['protocol_settings'] = ['cipher' => $cipher];
+            $response = $this->postJson($this->adminPath() . '/save', $payload);
+            $response->assertStatus($status);
+            if ($status === 422) $response->assertJsonValidationErrors('protocol_settings.cipher');
+        }
+    }
+
     private function payload(): array
     {
         return [
@@ -92,6 +105,7 @@ final class CdnSettingsTest extends TestCase
         $node = Server::create($payload);
         $url = '/api/v2/server/config?token=cdn-server-token&node_id=' . $node->id;
         $etag = $this->getJson($url)->assertOk()->headers->get('ETag');
+        Cache::put(\App\WebSocket\NodeWorker::HEARTBEAT_CACHE_KEY, time(), 30);
         Cache::put("node_ws_alive:{$node->id}", true);
         $pushes = [];
         Redis::shouldReceive('publish')->withArgs(function ($channel, $body) use (&$pushes) {

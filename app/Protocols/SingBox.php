@@ -4,6 +4,7 @@ namespace App\Protocols;
 use App\Utils\Helper;
 use Illuminate\Support\Arr;
 use App\Support\AbstractProtocol;
+use App\Support\NaiveSubscription;
 use App\Models\Server;
 use Log;
 
@@ -11,7 +12,7 @@ class SingBox extends AbstractProtocol
 {
     protected bool $supportsNativeSingBoxTransport = true;
 
-    public $flags = ['sing-box', 'hiddify', 'sfm'];
+    public $flags = ['sing-box', 'hiddify', 'hiddifynext', 'sfm'];
     public $allowedProtocols = [
         Server::TYPE_SHADOWSOCKS,
         Server::TYPE_TROJAN,
@@ -21,6 +22,7 @@ class SingBox extends AbstractProtocol
         Server::TYPE_TUIC,
         Server::TYPE_ANYTLS,
         Server::TYPE_SOCKS,
+        Server::TYPE_NAIVE,
         Server::TYPE_HTTP,
     ];
     private $config;
@@ -98,11 +100,6 @@ class SingBox extends AbstractProtocol
                     1 => '1.5.0'
                 ]
             ],
-            'naive' => [
-                'protocol_settings.tls_settings.ech.enabled' => [
-                    1 => '1.5.0'
-                ]
-            ],
             'http' => [
                 'protocol_settings.tls_settings.ech.enabled' => [
                     1 => '1.5.0'
@@ -140,12 +137,17 @@ class SingBox extends AbstractProtocol
         $proxies = [];
         foreach ($this->servers as $item) {
             $protocol_settings = $item['protocol_settings'];
+            $password = $item['password'] ?? $this->user['uuid'];
+            if (in_array($item['type'], [Server::TYPE_VLESS, Server::TYPE_VMESS, Server::TYPE_TROJAN], true)
+                && data_get($protocol_settings, 'network') === 'xhttp') {
+                continue;
+            }
             if ($item['type'] === Server::TYPE_SHADOWSOCKS) {
                 $ssConfig = $this->buildShadowsocks($item['password'], $item);
                 $proxies[] = $ssConfig;
             }
             if ($item['type'] === Server::TYPE_TROJAN) {
-                $trojanConfig = $this->buildTrojan($this->user['uuid'], $item);
+                $trojanConfig = $this->buildTrojan($password, $item);
                 $proxies[] = $trojanConfig;
             }
             if ($item['type'] === Server::TYPE_VMESS) {
@@ -160,23 +162,29 @@ class SingBox extends AbstractProtocol
                 $proxies[] = $vlessConfig;
             }
             if ($item['type'] === Server::TYPE_HYSTERIA) {
-                $hysteriaConfig = $this->buildHysteria($this->user['uuid'], $item);
+                $hysteriaConfig = $this->buildHysteria($password, $item);
                 $proxies[] = $hysteriaConfig;
             }
             if ($item['type'] === Server::TYPE_TUIC) {
-                $tuicConfig = $this->buildTuic($this->user['uuid'], $item);
+                $tuicConfig = $this->buildTuic($password, $item);
                 $proxies[] = $tuicConfig;
             }
             if ($item['type'] === Server::TYPE_ANYTLS) {
-                $anytlsConfig = $this->buildAnyTLS($this->user['uuid'], $item);
+                $anytlsConfig = $this->buildAnyTLS($password, $item);
                 $proxies[] = $anytlsConfig;
             }
             if ($item['type'] === Server::TYPE_SOCKS) {
-                $socksConfig = $this->buildSocks($this->user['uuid'], $item);
+                $socksConfig = $this->buildSocks($password, $item);
                 $proxies[] = $socksConfig;
             }
+            if ($item['type'] === Server::TYPE_NAIVE && $this->supportsNaive()) {
+                $naive = $this->buildNaive($item);
+                if ($naive !== null) {
+                    $proxies[] = $naive;
+                }
+            }
             if ($item['type'] === Server::TYPE_HTTP) {
-                $httpConfig = $this->buildHttp($this->user['uuid'], $item);
+                $httpConfig = $this->buildHttp($password, $item);
                 $proxies[] = $httpConfig;
             }
         }
@@ -339,7 +347,7 @@ class SingBox extends AbstractProtocol
 
     /**
      * 根据客户端版本自适应配置格式
-     * 模板基准格式: 1.13.0+ (最新)
+     * 模板基准格式: 1.14.0+
      */
     protected function adaptConfigForVersion(): void
     {
@@ -370,27 +378,51 @@ class SingBox extends AbstractProtocol
         }
     }
 
-    /**
-     * 获取核心版本 (Hiddify/SFM 等映射到内核版本)
-     */
-    private function getSingBoxCoreVersion(): ?string
+    private function buildNaive(array $server): ?array
     {
-        // 优先从 UA 提取核心版本
-        if (!empty($this->userAgent)) {
-            if (preg_match('/sing-box\s+v?(\d+(?:\.\d+){0,2})/i', $this->userAgent, $matches)) {
-                return $matches[1];
-            }
-        }
-
-        if (empty($this->clientVersion)) {
+        $out = NaiveSubscription::from($this->user, $server);
+        if ($out === null) {
             return null;
         }
-
-        if ($this->clientName === 'sing-box') {
-            return $this->clientVersion;
+        $this->appendEch($out['tls'], data_get($server, 'protocol_settings.tls_settings.ech'));
+        if (isset($out['tls']['ech']['config'][0])) {
+            // Cronet requires a single ECH CONFIGS PEM block, even for a base64 panel value.
+            $base64 = Helper::toMihomoEchConfig($out['tls']['ech']['config'][0]);
+            $bytes = $base64 ? base64_decode($base64, true) : false;
+            if ($bytes === false || $bytes === '') {
+                return null;
+            }
+            $out['tls']['ech']['config'] = ["-----BEGIN ECH CONFIGS-----\n"
+                . chunk_split(base64_encode($bytes), 64, "\n") . "-----END ECH CONFIGS-----"];
         }
+        return ['type' => 'naive', 'tag' => $server['name']] + $out;
+    }
 
-        return '1.13.0';
+    private function supportsNaive(): bool
+    {
+        if (in_array($this->clientName, ['hiddifynext', 'hiddify'], true)) {
+            // Older iOS packages advertised Naive but lacked the Cronet runtime.
+            $desktopOrAndroid = preg_match('/\((?:android|windows|linux|macos)\)/i', $this->userAgent ?? '');
+            return $this->supportsFeature($this->clientName, $desktopOrAndroid ? '5.5.5' : '5.9.15');
+        }
+        if (!in_array($this->clientName, ['sing-box', 'sfm'], true)) {
+            return false;
+        }
+        $version = $this->reportedSingBoxCoreVersion();
+        return $version !== null && version_compare($version, '1.14.0', '>=');
+    }
+
+    private function reportedSingBoxCoreVersion(): ?string
+    {
+        if (preg_match('~\bsing-box[/\s]+v?(\d+(?:\.\d+){0,2}(?:-[\w.-]+)?)~i', $this->userAgent ?? '', $matches)) {
+            return $matches[1];
+        }
+        return $this->clientName === 'sing-box' ? $this->clientVersion : null;
+    }
+
+    private function getSingBoxCoreVersion(): ?string
+    {
+        return $this->reportedSingBoxCoreVersion() ?? ($this->clientVersion !== null ? '1.13.0' : null);
     }
 
     /**
@@ -736,7 +768,7 @@ class SingBox extends AbstractProtocol
             'up_mbps' => data_get($protocol_settings, 'bandwidth.up'),
             'down_mbps' => data_get($protocol_settings, 'bandwidth.down'),
         ];
-        $versionConfig = match (data_get($protocol_settings, 'version', 1)) {
+        $versionConfig = match ((int) data_get($protocol_settings, 'version', 1)) {
             2 => [
                 'type' => 'hysteria2',
                 'password' => $password,
@@ -783,10 +815,10 @@ class SingBox extends AbstractProtocol
         }
         $this->appendEch($array['tls'], data_get($protocol_settings, 'tls.ech'));
 
-        if (data_get($protocol_settings, 'version') === 4) {
+        if ((int) data_get($protocol_settings, 'version') === 4) {
             $array['token'] = $password;
         } else {
-            $array['uuid'] = $password;
+            $array['uuid'] = $this->user['uuid'];
             $array['password'] = $password;
         }
 
@@ -805,10 +837,12 @@ class SingBox extends AbstractProtocol
             'tls' => [
                 'enabled' => true,
                 'insecure' => (bool) data_get($protocol_settings, 'tls.allow_insecure', false),
-                'alpn' => data_get($protocol_settings, 'alpn', ['h3']),
             ]
         ];
 
+        if ($alpn = data_get($protocol_settings, 'tls.alpn')) {
+            $array['tls']['alpn'] = $alpn;
+        }
         if ($serverName = data_get($protocol_settings, 'tls.server_name')) {
             $array['tls']['server_name'] = $serverName;
         }
@@ -826,7 +860,7 @@ class SingBox extends AbstractProtocol
             'server' => $server['host'],
             'server_port' => $server['port'],
             'version' => '5', // 默认使用 socks5
-            'username' => $password,
+            'username' => $this->user['uuid'],
             'password' => $password,
         ];
 
@@ -845,7 +879,7 @@ class SingBox extends AbstractProtocol
             'tag' => $server['name'],
             'server' => $server['host'],
             'server_port' => $server['port'],
-            'username' => $password,
+            'username' => $this->user['uuid'],
             'password' => $password,
         ];
 

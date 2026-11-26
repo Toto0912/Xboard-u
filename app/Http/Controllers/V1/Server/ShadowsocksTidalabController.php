@@ -20,7 +20,6 @@ class ShadowsocksTidalabController extends Controller
     // 后端获取用户
     public function user(Request $request)
     {
-        ini_set('memory_limit', -1);
         $server = $request->attributes->get('node_info');
         Cache::put(CacheKey::get('SERVER_SHADOWSOCKS_LAST_CHECK_AT', $server->id), time(), 3600);
         $users = ServerService::getAvailableUsers($server);
@@ -46,15 +45,12 @@ class ShadowsocksTidalabController extends Controller
     public function submit(Request $request)
     {
         $server = $request->attributes->get('node_info');
+        if ($server->type !== 'shadowsocks') {
+            return $this->fail([400, '节点不存在']);
+        }
         $data = json_decode(request()->getContent(), true);
         Cache::put(CacheKey::get('SERVER_SHADOWSOCKS_LAST_PUSH_AT', $server->id), time(), 3600);
-        $userService = new UserService();
-        $formatData = [];
-
-        foreach ($data as $item) {
-            $formatData[$item['user_id']] = [$item['u'], $item['d']];
-        }
-        $userService->trafficFetch($server, 'shadowsocks', $formatData);
+        ServerService::processTidalabTraffic($server, $data);
 
         return response([
             'ret' => 1,

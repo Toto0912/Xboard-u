@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText } from '@/lib/clipboard';
 import {
   batchGenerateCouponsCsv,
   dropCoupon,
@@ -20,7 +21,7 @@ import {
   toggleCouponShow,
   type CouponRecord,
 } from '@/api/coupon';
-import { fetchPlans, LEGACY_PERIOD_KEYS } from '@/api/plan';
+import { fetchPlans, PLAN_PERIOD_KEYS, LEGACY_PERIOD_MAP } from '@/api/plan';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTablePagination } from '@/components/shared/DataTablePagination';
 import { DateTimePicker } from '@/components/shared/DateTimePicker';
@@ -45,7 +46,8 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { formatCurrency, formatTimestamp } from '@/lib/format';
+import { getPanelSettings } from '@/lib/settings';
+import { formatCurrency, formatTimestamp, parseCents } from '@/lib/format';
 
 function toDatetimeLocal(ts: number): string {
   const d = new Date(ts * 1000);
@@ -188,7 +190,8 @@ export default function CouponManagePage() {
     setLimitUsePerUser(
       coupon.limit_use_with_user != null ? String(coupon.limit_use_with_user) : '',
     );
-    setLimitPeriods(coupon.limit_period ?? []);
+    const stored = coupon.limit_period ?? [];
+    setLimitPeriods(PLAN_PERIOD_KEYS.filter((period) => stored.includes(period) || stored.includes(LEGACY_PERIOD_MAP[period])));
     setLimitPlanIds((coupon.limit_plan_ids ?? []).map(Number));
     setDialogOpen(true);
   };
@@ -197,12 +200,12 @@ export default function CouponManagePage() {
     e.preventDefault();
     const trimmedName = name.trim();
     const rawVal = Number(valueInput);
-    if (!trimmedName || !Number.isFinite(rawVal) || rawVal <= 0) {
+    const intVal = type === 1 ? parseCents(valueInput) : rawVal;
+    if (!trimmedName || intVal === null || !Number.isSafeInteger(intVal) || intVal <= 0 || (type === 2 && intVal > 100)) {
       toast.error(t('coupon.validationError'));
       return;
     }
 
-    const intVal = type === 1 ? Math.round(rawVal * 100) : Math.round(rawVal);
     const startTs = fromDatetimeLocal(startedAt);
     const endTs = fromDatetimeLocal(endedAt);
     if (endTs <= startTs) {
@@ -242,15 +245,6 @@ export default function CouponManagePage() {
       limit_period: limitPeriods.length > 0 ? limitPeriods : null,
       ...(code.trim() ? { code: code.trim() } : {}),
     });
-  };
-
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
   };
 
   const coupons = couponsQuery.data?.data ?? [];
@@ -525,7 +519,7 @@ export default function CouponManagePage() {
                   <div className="relative flex items-center">
                     <Input
                       type="number"
-                      min={1}
+                      min={type === 1 ? 0.01 : 1}
                       max={type === 2 ? 100 : undefined}
                       step={type === 1 ? '0.01' : '1'}
                       className="pr-10 font-mono text-xs"
@@ -533,7 +527,7 @@ export default function CouponManagePage() {
                       onChange={(e) => setValueInput(e.target.value)}
                     />
                     <span className="pointer-events-none absolute right-3 text-xs text-muted-foreground">
-                      {type === 1 ? '¥' : '%'}
+                      {type === 1 ? getPanelSettings().currency_symbol : '%'}
                     </span>
                   </div>
                 </div>
@@ -611,7 +605,7 @@ export default function CouponManagePage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('coupon.limitPeriods')}</Label>
                 <div className="flex flex-wrap gap-3 rounded-lg border bg-[var(--input-bg)] p-3">
-                  {LEGACY_PERIOD_KEYS.map((p) => {
+                  {PLAN_PERIOD_KEYS.map((p) => {
                     const checked = limitPeriods.includes(p);
                     return (
                       <label key={p} className="flex items-center gap-1.5 text-xs">
@@ -625,7 +619,7 @@ export default function CouponManagePage() {
                             )
                           }
                         />
-                        <span>{t(`order.periods.${p}`, { defaultValue: p })}</span>
+                        <span>{t(`order.periods.${LEGACY_PERIOD_MAP[p]}`, { defaultValue: p })}</span>
                       </label>
                     );
                   })}

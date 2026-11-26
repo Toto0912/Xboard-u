@@ -51,7 +51,7 @@ class CheckCommission extends Command
         if ((int)admin_setting('commission_auto_check_enable', 1)) {
             Order::where('commission_status', 0)
                 ->where('invite_user_id', '!=', NULL)
-                ->where('status', Order::STATUS_COMPLETED)
+                ->whereIn('status', Order::COMMISSION_ELIGIBLE_STATUSES)
                 ->where('updated_at', '<=', strtotime('-3 day', time()))
                 ->update([
                     'commission_status' => 1

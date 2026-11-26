@@ -74,12 +74,20 @@ class ResetPackagePurchaseTest extends TestCase
     {
         return [
             'expired' => [['expired_at' => 1]],
-            'banned' => [['banned' => true]],
             'no traffic allowance' => [['transfer_enable' => 0]],
             'no plan' => [['plan_id' => null]],
             'missing reset price' => [[], ['monthly' => 10]],
             'null reset price' => [[], ['monthly' => 10, 'reset_traffic' => null]],
         ];
+    }
+
+    public function test_banned_account_cannot_access_any_reset_purchase_entry(): void
+    {
+        $this->member->update(['banned' => true]);
+        $this->getJson('/api/v1/user/getSubscribe')->assertForbidden();
+        $this->getJson('/api/v1/user/plan/fetch?id='.$this->plan->id)->assertForbidden();
+        $this->postJson('/api/v1/user/order/save', ['plan_id' => $this->plan->id, 'period' => 'reset_price'])->assertForbidden();
+        $this->assertSame(0, Order::count());
     }
 
     #[DataProvider('ineligibleMembers')]

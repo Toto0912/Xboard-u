@@ -28,20 +28,21 @@ class CommController extends Controller
         $inputEmail = $request->input('email');
         $email = User::normalizeEmail($inputEmail);
 
+        $registered = User::byEmail($email)->exists();
+
         // 检查白名单后缀限制
         if ((int) admin_setting('email_whitelist_enable', 0)) {
-            $isRegisteredEmail = User::byEmail($email)->exists();
-            if (!$isRegisteredEmail) {
+            if (!$registered) {
                 if (!Helper::emailSuffixVerify($inputEmail, Helper::getEmailSuffix())) {
                     return $this->fail([400, __('Email suffix is not in whitelist')]);
                 }
             }
         }
 
-        if (Cache::get(CacheKey::get('LAST_SEND_EMAIL_VERIFY_TIMESTAMP', $email))) {
+        if (!Cache::add(CacheKey::get('LAST_SEND_EMAIL_VERIFY_TIMESTAMP', $email), time(), 60)) {
             return $this->fail([400, __('Email verification code has been sent, please request again later')]);
         }
-        $code = rand(100000, 999999);
+        $code = random_int(100000, 999999);
         $subject = admin_setting('app_name', 'XBoard') . __('Email verification code');
 
         SendEmailJob::dispatch([
@@ -55,8 +56,9 @@ class CommController extends Controller
             ]
         ]);
 
-        Cache::put(CacheKey::get('EMAIL_VERIFY_CODE', $email), $code, 300);
-        Cache::put(CacheKey::get('LAST_SEND_EMAIL_VERIFY_TIMESTAMP', $email), time(), 60);
+        Cache::put(CacheKey::get('EMAIL_VERIFY_CODE', $email), [
+            'code' => $code, 'purpose' => $registered ? 'reset' : 'register',
+        ], 300);
         return $this->success(true);
     }
 

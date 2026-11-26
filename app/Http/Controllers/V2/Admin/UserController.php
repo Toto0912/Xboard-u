@@ -50,6 +50,7 @@ class UserController extends Controller
     // Apply filters and sorts to the query builder.
     private function applyFiltersAndSorts(Request $request, Builder|QueryBuilder $builder): void
     {
+        \App\Support\AdminListQuery::validate($request, 'id email invite_user_id telegram_id plan_id group_id banned balance commission_balance commission_rate is_admin is_staff transfer_enable u d total_used online_count speed_limit device_limit expired_at last_login_at last_reset_at next_reset_at created_at updated_at', ['invite_user.email', 'group_ids']);
         $this->applyFilters($request, $builder);
         $this->applySorting($request, $builder);
     }
@@ -83,8 +84,8 @@ class UserController extends Controller
     {
         // 处理关联查询
         if (str_contains($field, '.')) {
-            if (!method_exists($query, 'whereHas')) {
-                return;
+            if (!$query instanceof Builder) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['filter' => 'Relation filter requires a user query.']);
             }
             [$relation, $relationField] = explode('.', $field);
             $query->whereHas($relation, function ($q) use ($relationField, $value) {
@@ -107,19 +108,25 @@ class UserController extends Controller
             return;
         }
 
+        $queryField = match ($field) {
+            'group_ids' => 'group_id',
+            'total_used' => DB::raw('(u + d)'),
+            default => $field,
+        };
+
         // 处理数组值的 'in' 操作
         if (is_array($value)) {
             $values = $field === 'email'
                 ? array_map(static fn ($value) => User::normalizeEmail((string) $value), $value)
                 : $value;
-            $query->whereIn($field === 'group_ids' ? 'group_id' : $field, $values);
+            $query->whereIn($queryField, $values);
             return;
         }
 
         // 处理基于运算符的过滤
         if (!is_string($value) || !str_contains($value, ':')) {
             $filterValue = $field === 'email' ? User::normalizeEmail((string) $value) : $value;
-            $query->where($field, 'like', "%{$filterValue}%");
+            $query->where($queryField, 'like', "%{$filterValue}%");
             return;
         }
 
@@ -136,10 +143,7 @@ class UserController extends Controller
         }
 
         // 处理计算字段
-        $queryField = match ($field) {
-            'total_used' => DB::raw('(u + d)'),
-            default => $field
-        };
+
 
         $this->applyQueryCondition($query, $queryField, $operator, $filterValue);
     }
@@ -153,8 +157,8 @@ class UserController extends Controller
 
         collect($request->input('sort'))->each(function ($sort) use ($builder) {
             $field = $sort['id'];
-            $direction = $sort['desc'] ? 'DESC' : 'ASC';
-            $builder->orderBy($field, $direction);
+            $direction = filter_var($sort['desc'], FILTER_VALIDATE_BOOLEAN) ? 'DESC' : 'ASC';
+            $builder->orderBy($field === 'total_used' ? DB::raw('(u + d)') : $field, $direction);
         });
     }
 
@@ -393,7 +397,6 @@ class UserController extends Controller
     // Export users to CSV.
     public function dumpCSV(Request $request)
     {
-        ini_set('memory_limit', '-1');
         gc_enable(); // 启用垃圾回收
 
         $scopeInfo = $this->resolveScope($request);
@@ -486,7 +489,7 @@ class UserController extends Controller
 
     public function generate(UserGenerate $request)
     {
-        if ($request->input('email_prefix')) {
+        if ($request->filled('email_prefix')) {
             // If generate_count is specified with email_prefix, generate multiple users with incremented emails
             if ($request->input('generate_count')) {
                 return $this->multiGenerateWithPrefix($request);
@@ -666,7 +669,6 @@ class UserController extends Controller
 
     public function sendMail(UserSendMail $request)
     {
-        ini_set('memory_limit', '-1');
         $scopeInfo = $this->resolveScope($request);
         $scope = $scopeInfo['scope'];
         $userIds = $scopeInfo['user_ids'];
@@ -677,8 +679,7 @@ class UserController extends Controller
             }
         }
 
-        $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+
 
         $builder = User::query()
             ->with('plan:id,name')
@@ -686,7 +687,6 @@ class UserController extends Controller
 
         if ($scope === 'filtered') {
             // filtered: apply filters/sort
-            $builder->orderBy($sort, $sortType);
             $this->applyFiltersAndSorts($request, $builder);
         } elseif ($scope === 'selected') {
             $builder->whereIn('id', $userIds);
@@ -747,14 +747,12 @@ class UserController extends Controller
             }
         }
 
-        $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+
 
         $builder = User::query()->orderBy('id', 'desc');
 
         if ($scope === 'filtered') {
             // filtered: keep current semantics
-            $builder->orderBy($sort, $sortType);
             $this->applyFiltersAndSorts($request, $builder);
         } elseif ($scope === 'selected') {
             $builder->whereIn('id', $userIds);
@@ -766,8 +764,8 @@ class UserController extends Controller
             DB::transaction(function () use ($builder, &$affectedUsers): void {
                 $affectedUsers = (clone $builder)->reorder()->lockForUpdate()->get(['id', 'group_id']);
                 $ids = $affectedUsers->pluck('id');
-                $builder->update(['banned' => 1]);
                 foreach ($ids->chunk(500) as $chunk) {
+                    User::whereKey($chunk->all())->update(['banned' => 1]);
                     \Laravel\Sanctum\PersonalAccessToken::where('tokenable_type', (new User())->getMorphClass())
                         ->whereIn('tokenable_id', $chunk)->delete();
                 }

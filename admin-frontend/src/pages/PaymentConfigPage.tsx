@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText as handleCopy } from '@/lib/clipboard';
 import {
   dropPayment,
   fetchPayments,
@@ -172,15 +173,6 @@ export default function PaymentConfigPage() {
       void queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
     },
   });
-
-  const handleCopy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.copyFailed'));
-    }
-  };
 
   const payments = paymentsQuery.data ?? [];
   const filteredPayments = useMemo(() => {

@@ -3,6 +3,7 @@
 namespace App\Services\Plugin;
 
 use App\Models\Plugin;
+use App\Support\PackageFiles;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -35,12 +36,12 @@ class PluginManager
 
     public function resolvePluginPath(string $pluginCode): ?string
     {
-        $dirName = Str::studly($pluginCode);
-        $corePath = $this->corePluginPath . '/' . $dirName;
+        $dirName = $this->directoryName($pluginCode);
+        $corePath = PackageFiles::directory($this->corePluginPath, $dirName);
         if (File::isDirectory($corePath)) {
             return $corePath;
         }
-        $userPath = $this->pluginPath . '/' . $dirName;
+        $userPath = PackageFiles::directory($this->pluginPath, $dirName);
         if (File::isDirectory($userPath)) {
             return $userPath;
         }
@@ -50,18 +51,30 @@ class PluginManager
     public function getPluginPath(string $pluginCode): string
     {
         return $this->resolvePluginPath($pluginCode)
-            ?? $this->pluginPath . '/' . Str::studly($pluginCode);
+            ?? $this->getUserPluginPath($pluginCode);
     }
 
     public function getUserPluginPath(string $pluginCode): string
     {
-        return $this->pluginPath . '/' . Str::studly($pluginCode);
+        $path = PackageFiles::directory($this->pluginPath, $this->directoryName($pluginCode));
+        if (is_dir($path) && (!is_file($path . '/config.json') || is_link($path . '/config.json')
+            || (json_decode(File::get($path . '/config.json'), true)['code'] ?? null) !== $pluginCode)) {
+            throw new \InvalidArgumentException('Plugin identifier does not match its installed package');
+        }
+        return $path;
     }
 
     public function isCorePlugin(string $pluginCode): bool
     {
-        $dirName = Str::studly($pluginCode);
-        return File::isDirectory($this->corePluginPath . '/' . $dirName);
+        return File::isDirectory(PackageFiles::directory($this->corePluginPath, $this->directoryName($pluginCode)));
+    }
+
+    private function directoryName(string $code): string
+    {
+        if (!preg_match('/^[a-z0-9_]+$/D', $code)) {
+            throw new \InvalidArgumentException('Invalid plugin code');
+        }
+        return Str::studly($code);
     }
 
     public function getPluginPaths(): array
@@ -297,9 +310,7 @@ class PluginManager
     {
         $assetsPath = $this->getPluginPath($pluginCode) . '/resources/assets';
         if (File::exists($assetsPath)) {
-            $publishPath = public_path('plugins/' . $pluginCode);
-            File::ensureDirectoryExists($publishPath);
-            File::copyDirectory($assetsPath, $publishPath);
+            PackageFiles::replace($assetsPath, PackageFiles::directory(public_path('plugins'), $pluginCode), true);
         }
     }
 
@@ -431,12 +442,11 @@ class PluginManager
      */
     public function delete(string $pluginCode): bool
     {
-        if (Plugin::where('code', $pluginCode)->exists()) {
-            $this->uninstall($pluginCode);
-        }
-
         if ($this->isCorePlugin($pluginCode)) {
             throw new \Exception('核心插件不允许删除');
+        }
+        if (Plugin::where('code', $pluginCode)->exists()) {
+            $this->uninstall($pluginCode);
         }
 
         $pluginPath = $this->getUserPluginPath($pluginCode);
@@ -540,8 +550,18 @@ class PluginManager
             throw new \Exception('无法打开插件包文件');
         }
 
-        $zip->extractTo($extractPath);
-        $zip->close();
+        try {
+            PackageFiles::extract($zip, $extractPath);
+            return $this->installUploadedFiles($extractPath);
+        } finally {
+            if (is_dir($extractPath)) {
+                File::deleteDirectory($extractPath);
+            }
+        }
+    }
+
+    private function installUploadedFiles(string $extractPath): bool
+    {
 
         $configFile = File::glob($extractPath . '/*/config.json');
         if (empty($configFile)) {
@@ -556,8 +576,7 @@ class PluginManager
         $pluginPath = dirname(reset($configFile));
         $config = json_decode(File::get($pluginPath . '/config.json'), true);
 
-        if (!$this->validateConfig($config)) {
-            File::deleteDirectory($extractPath);
+        if (!is_array($config) || !$this->validateConfig($config) || $this->isCorePlugin($config['code'])) {
             throw new \Exception('插件配置文件格式错误');
         }
 
@@ -578,12 +597,9 @@ class PluginManager
                 throw new \Exception('上传插件版本不高于已安装版本，无法升级');
             }
 
-            File::deleteDirectory($targetPath);
         }
 
-        File::copyDirectory($pluginPath, $targetPath);
-        File::deleteDirectory($pluginPath);
-        File::deleteDirectory($extractPath);
+        PackageFiles::replace($pluginPath, $targetPath);
 
         if (Plugin::where('code', $config['code'])->exists()) {
             return $this->update($config['code']);

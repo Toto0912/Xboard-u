@@ -41,6 +41,11 @@ export function Hy2MasqueradeEditor({
   );
   const [error, setError] = useState<string | null>(null);
   const lastInvalidRef = useRef(false);
+  const invalidHandler = useRef(onDraftInvalidChange);
+  invalidHandler.current = onDraftInvalidChange;
+  useEffect(() => () => {
+    if (lastInvalidRef.current) invalidHandler.current(false);
+  }, []);
 
   const reportInvalid = (invalid: boolean) => {
     if (lastInvalidRef.current !== invalid) {
@@ -56,6 +61,7 @@ export function Hy2MasqueradeEditor({
         : '';
     setDraft(nextStr);
     setError(null);
+    reportInvalid(false);
   }, [kernel, masquerade]);
 
   const applyMasquerade = (val: Record<string, unknown> | undefined) => {
