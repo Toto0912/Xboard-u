@@ -88,7 +88,7 @@ class RegisterServiceTest extends TestCase
         Cache::put(CacheKey::get('EMAIL_VERIFY_CODE', $email), 123456, 300);
 
         $this->mock(UserService::class)
-            ->shouldReceive('createUser')
+            ->shouldReceive('createAndSaveUser')
             ->once()
             ->andReturnUsing(function (array $data) use ($email) {
                 User::query()->create([
@@ -100,15 +100,8 @@ class RegisterServiceTest extends TestCase
                     'updated_at' => time(),
                 ]);
 
-                $user = new User();
-                $user->email = $data['email'];
-                $user->password = password_hash($data['password'], PASSWORD_DEFAULT);
-                $user->uuid = Helper::guid(true);
-                $user->token = Helper::guid();
-                $user->created_at = time();
-                $user->updated_at = time();
-
-                return $user;
+                // The competing insert won after validation; exercise the real insert and unique index.
+                return (new UserService())->createAndSaveUser($data);
             });
 
         [$success, $result] = $this->service->register($this->makeRequest([
@@ -119,6 +112,7 @@ class RegisterServiceTest extends TestCase
         $this->assertFalse($success);
         $this->assertSame(400201, $result[0]);
         $this->assertSame(1, User::byEmail($email)->count());
+        $this->assertEquals('123456', Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $email)));
     }
 
     private function makeRequest(array $overrides = []): Request

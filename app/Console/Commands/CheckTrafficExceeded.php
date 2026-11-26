@@ -42,20 +42,8 @@ class CheckTrafficExceeded extends Command
                 continue;
             }
 
-            $userIdsInGroup = $users->pluck('id')->toArray();
-            $servers = Server::whereJsonContains('group_ids', (string) $groupId)->get();
-
-            foreach ($servers as $server) {
-                if (!NodeSyncService::isNodeOnline($server->id)) {
-                    continue;
-                }
-
-                NodeSyncService::push($server->id, 'sync.user.delta', [
-                    'action' => 'remove',
-                    'users' => array_map(fn($id) => ['id' => $id], $userIdsInGroup),
-                ]);
-                $notifiedCount++;
-            }
+            $userIdsInGroup = $users->pluck('id')->all();
+            $notifiedCount += NodeSyncService::notifyUsersRemovedFromGroup($userIdsInGroup, (int) $groupId);
         }
 
         $this->info("Checked " . count($pendingUserIds) . " users, notified {$notifiedCount} nodes for " . $exceededUsers->count() . " exceeded users.");

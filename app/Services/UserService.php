@@ -14,6 +14,7 @@ use App\Services\TrafficResetService;
 use App\Models\TrafficResetLog;
 use App\Utils\Helper;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class UserService
 {
@@ -130,8 +131,8 @@ class UserService
         $server = ['id' => $server['id'], 'rate' => $server['rate']];
         collect($data)->chunk(1000)->each(function ($chunk) use ($timestamp, $server, $protocol) {
             TrafficFetchJob::dispatch($server, $chunk->toArray(), $protocol, $timestamp);
-            StatUserJob::dispatch($server, $chunk->toArray(), $protocol, 'd');
-            StatServerJob::dispatch($server, $chunk->toArray(), $protocol, 'd');
+            StatUserJob::dispatch($server, $chunk->toArray(), $protocol, 'd', $timestamp);
+            StatServerJob::dispatch($server, $chunk->toArray(), $protocol, 'd', $timestamp);
         });
     }
 
@@ -162,7 +163,7 @@ class UserService
     /**
      * 创建用户
      */
-    public function createUser(array $data): User
+    public function createUser(array $data, bool $lockTrial = false): User
     {
         $user = new User();
 
@@ -184,10 +185,18 @@ class UserService
         if (isset($data['plan_id'])) {
             $this->setPlanForUser($user, $data['plan_id'], $data['expired_at'] ?? null);
         } else {
-            $this->setTryOutPlan(user: $user);
+            $this->setTryOutPlan($user, $lockTrial);
         }
 
         return $user;
+    }
+
+    public function createAndSaveUser(array $data): ?User
+    {
+        return DB::transaction(function () use ($data) {
+            $user = $this->createUser($data, lockTrial: true);
+            return $user->save() ? $user : null;
+        }, 3);
     }
 
     /**
@@ -220,10 +229,7 @@ class UserService
         if (!$plan)
             return;
 
-        $user->plan_id = $plan->id;
-        $user->group_id = $plan->group_id;
-        $user->transfer_enable = $plan->transfer_enable * 1073741824;
-        $user->speed_limit = $plan->speed_limit;
+        $this->applyPlanLimits($user, $plan);
 
         if ($expiredAt) {
             $user->expired_at = $expiredAt;
@@ -240,11 +246,7 @@ class UserService
      */
     public function assignPlan(User $user, Plan $plan, int $validityDays): User
     {
-        $user->plan_id = $plan->id;
-        $user->group_id = $plan->group_id;
-        $user->transfer_enable = $plan->transfer_enable * 1073741824;
-        $user->speed_limit = $plan->speed_limit;
-        $user->device_limit = $plan->device_limit;
+        $this->applyPlanLimits($user, $plan);
 
         if ($validityDays > 0) {
             $user = $this->extendSubscription($user, $validityDays);
@@ -272,19 +274,27 @@ class UserService
     /**
      * 设置试用计划
      */
-    private function setTryOutPlan(User $user): void
+    private function setTryOutPlan(User $user, bool $lockTrial): void
     {
-        if (!(int) admin_setting('try_out_plan_id', 0))
+        $planId = (int) admin_setting('try_out_plan_id', 0);
+        if (!$planId) {
             return;
-
-        $plan = Plan::find(admin_setting('try_out_plan_id'));
-        if (!$plan)
+        }
+        $plan = $lockTrial ? PlanService::lockForAllocation($planId) : Plan::find($planId);
+        if (!$plan || !(new PlanService($plan))->canGrantSeat($user)) {
             return;
+        }
 
-        $user->transfer_enable = $plan->transfer_enable * 1073741824;
+        $this->applyPlanLimits($user, $plan);
+        $user->expired_at = time() + (admin_setting('try_out_hour', 1) * 3600);
+    }
+
+    private function applyPlanLimits(User $user, Plan $plan): void
+    {
         $user->plan_id = $plan->id;
         $user->group_id = $plan->group_id;
-        $user->expired_at = time() + (admin_setting('try_out_hour', 1) * 3600);
+        $user->transfer_enable = $plan->transfer_enable * 1073741824;
         $user->speed_limit = $plan->speed_limit;
+        $user->device_limit = $plan->device_limit;
     }
 }

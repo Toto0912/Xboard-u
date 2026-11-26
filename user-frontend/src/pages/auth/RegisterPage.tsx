@@ -88,6 +88,7 @@ export default function RegisterPage() {
     onSuccess: () => {
       toast.success(t('auth.codeSent'));
       setCooldown(60);
+      captchaRef.current?.reset();
     },
     onError: () => {
       captchaRef.current?.reset();

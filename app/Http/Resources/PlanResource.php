@@ -4,9 +4,9 @@
 namespace App\Http\Resources;
 
 use App\Models\Plan;
-use App\Services\PlanService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Arr;
 
 class PlanResource extends JsonResource
 {
@@ -27,6 +27,7 @@ class PlanResource extends JsonResource
             'content' => $this->formatContent(),
             ...$this->getPeriodPrices(),
             'capacity_limit' => $this->getFormattedCapacityLimit(),
+            ...Arr::only($this->resource instanceof Plan ? $this->resource->getAttributes() : $this->resource, ['remaining_capacity']),
             'transfer_enable' => $this->resource['transfer_enable'],
             'speed_limit' => $this->resource['speed_limit'],
             'device_limit' => $this->resource['device_limit'],

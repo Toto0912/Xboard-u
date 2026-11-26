@@ -18,6 +18,7 @@ class ServerRoute
         ], function ($route) {
             $route->match(['GET', 'POST'], 'handshake', [ServerController::class, 'handshake']);
             $route->post('report', [ServerController::class, 'report']);
+            $route->post('traffic-batch', [ServerController::class, 'trafficBatch']);
             $route->get('config', [UniProxyController::class, 'config']);
             $route->get('user', [UniProxyController::class, 'user']);
             $route->post('push', [UniProxyController::class, 'push']);

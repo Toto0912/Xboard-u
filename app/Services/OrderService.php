@@ -4,12 +4,17 @@ namespace App\Services;
 
 use App\Exceptions\ApiException;
 use App\Jobs\OrderHandleJob;
+use App\Models\Coupon;
 use App\Models\Order;
+use App\Models\OrderPaymentAttempt;
+use App\Models\OrderPaymentReceipt;
 use App\Models\Plan;
 use App\Models\TrafficResetLog;
 use App\Models\User;
 use App\Services\Plugin\HookManager;
 use App\Utils\Helper;
+use Brick\Math\BigInteger;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -71,6 +76,8 @@ class OrderService
         HookManager::call('order.create.before', [$user, $plan, $period, $couponCode]);
 
         return DB::transaction(function () use ($user, $plan, $period, $couponCode, $userService) {
+            // Lock the sale terms before the buyer, as in an admin's forced plan update.
+            $plan = PlanService::lockForSale($plan);
             $user = User::lockForUpdate()->find($user->id);
             if (!$user) {
                 throw new ApiException(__('The user does not exist'));
@@ -80,14 +87,22 @@ class OrderService
                 throw new ApiException(__('You have an unpaid or pending order, please try again later or cancel it'));
             }
 
+            (new PlanService($plan))->validatePurchase($user, $period);
+
             $newPeriod = PlanService::getPeriodKey($period);
+            $price = (float) ($plan->prices[$newPeriod] ?? 0);
+            $cents = $price * 100;
+            // Prices entered by the admin have two decimal places. Legacy sub-cent prices truncate.
+            if ($price === round($price, 2)) {
+                $cents = round($cents);
+            }
 
             $order = new Order([
                 'user_id' => $user->id,
                 'plan_id' => $plan->id,
                 'period' => $newPeriod,
                 'trade_no' => Helper::generateOrderNo(),
-                'total_amount' => (int) (optional($plan->prices)[$newPeriod] * 100),
+                'total_amount' => (int) $cents,
             ]);
 
             $orderService = new self($order);
@@ -114,7 +129,7 @@ class OrderService
             HookManager::call('order.after_create', $order);
 
             return $order;
-        });
+        }, 3);
     }
 
     public function open(): void
@@ -125,14 +140,19 @@ class OrderService
                 return null;
             }
 
-            $plan = Plan::find($order->plan_id);
+            $plan = Plan::sharedLock()->find($order->plan_id);
             if (!$plan) {
                 throw new \RuntimeException('订阅不存在');
             }
 
-            HookManager::call('order.open.before', $order);
-
             $this->user = User::lockForUpdate()->find($order->user_id);
+            $period = PlanService::getPeriodKey($order->period);
+            if ($period !== Plan::PERIOD_RESET_TRAFFIC
+                && !(new PlanService($plan))->canHoldSeat($this->user, $order)) {
+                // Keep a previously paid, oversubscribed sale in PROCESSING for check:order to retry.
+                return null;
+            }
+            HookManager::call('order.open.before', $order);
 
             if ($order->surplus_credit) {
                 $this->user->balance += $order->surplus_credit;
@@ -143,17 +163,32 @@ class OrderService
                     ->update(['status' => Order::STATUS_DISCOUNTED]);
             }
 
-            match ((string) $order->period) {
-                Plan::PERIOD_ONETIME => $this->buyByOneTime($plan),
-                Plan::PERIOD_RESET_TRAFFIC => app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_ORDER),
-                default => $this->buyByPeriod($order, $plan),
-            };
+            // Capture one-time service before an upgrade changes expired_at.
+            $resetRequired = $this->user->expired_at === null
+                || (int) $order->type === Order::TYPE_NEW_PURCHASE
+                || in_array($period, [Plan::PERIOD_ONETIME, Plan::PERIOD_RESET_TRAFFIC], true);
+            if ($period === Plan::PERIOD_ONETIME) {
+                $this->buyByOneTime($plan);
+            } elseif ($period !== Plan::PERIOD_RESET_TRAFFIC) {
+                $this->buyByPeriod($order, $plan);
+            }
 
             $this->setSpeedLimit($plan->speed_limit);
             $this->setDeviceLimit($plan->device_limit);
 
             if (!$this->user->save()) {
                 throw new \RuntimeException('用户信息保存失败');
+            }
+
+            $eventId = match ((int) $order->type) {
+                Order::TYPE_NEW_PURCHASE => admin_setting('new_order_event_id', 0),
+                Order::TYPE_RENEWAL => admin_setting('renew_order_event_id', 0),
+                Order::TYPE_UPGRADE => admin_setting('change_order_event_id', 0),
+                default => 0,
+            };
+
+            if ($resetRequired || (int) $eventId === 1) {
+                $this->requireTrafficReset();
             }
 
             $order->status = Order::STATUS_COMPLETED;
@@ -170,17 +205,6 @@ class OrderService
 
         $order = $openedOrder;
         $this->order = $order;
-
-        $eventId = match ((int) $order->type) {
-            Order::TYPE_NEW_PURCHASE => admin_setting('new_order_event_id', 0),
-            Order::TYPE_RENEWAL => admin_setting('renew_order_event_id', 0),
-            Order::TYPE_UPGRADE => admin_setting('change_order_event_id', 0),
-            default => 0,
-        };
-
-        if ($eventId) {
-            $this->openEvent($eventId);
-        }
 
         HookManager::call('order.open.after', $order);
     }
@@ -213,10 +237,16 @@ class OrderService
     public function setVipDiscount(User $user)
     {
         $order = $this->order;
-        if ($user->discount) {
-            $order->discount_amount = $order->discount_amount + ($order->total_amount * ($user->discount / 100));
+        if ($order->discount_amount === null && !$user->discount) {
+            return;
         }
-        $order->total_amount = $order->total_amount - $order->discount_amount;
+
+        // Both discounts use the original price. Round once before applying trade-in credit or balance.
+        $price = $order->total_amount;
+        $vipDiscount = $price * (int) $user->discount / 100;
+        $discount = (int) round(($order->discount_amount ?? 0) + $vipDiscount);
+        $order->discount_amount = max(0, min($price, $discount));
+        $order->total_amount = $price - $order->discount_amount;
     }
 
     public function setInvite(User $user): void
@@ -262,33 +292,25 @@ class OrderService
     {
         if ($user->expired_at === NULL) {
             $lastOneTimeOrder = Order::where('user_id', $user->id)
-                ->where('period', Plan::PERIOD_ONETIME)
+                ->whereIn('period', [Plan::PERIOD_ONETIME, 'onetime_price'])
                 ->where('status', Order::STATUS_COMPLETED)
                 ->orderBy('id', 'DESC')
                 ->first();
-            if (!$lastOneTimeOrder)
+            if (!$lastOneTimeOrder || (int) $lastOneTimeOrder->plan_id !== (int) $user->plan_id) {
                 return;
-            $nowUserTraffic = Helper::transferToGB($user->transfer_enable);
-            if (!$nowUserTraffic)
+            }
+            $quota = (int) $user->transfer_enable;
+            $paid = $this->netOrderValue($lastOneTimeOrder);
+            if ($quota <= 0 || $paid <= 0) {
                 return;
-            $paidTotalAmount = ($lastOneTimeOrder->total_amount + $lastOneTimeOrder->balance_amount);
-            if (!$paidTotalAmount)
-                return;
-            $trafficUnitPrice = $paidTotalAmount / $nowUserTraffic;
-            $notUsedTraffic = $nowUserTraffic - Helper::transferToGB($user->u + $user->d);
-            $result = $trafficUnitPrice * $notUsedTraffic;
-            $order->surplus_amount = (int) ($result > 0 ? $result : 0);
-            $order->surplus_order_ids = Order::where('user_id', $user->id)
-                ->where('period', '!=', Plan::PERIOD_RESET_TRAFFIC)
-                ->where('status', Order::STATUS_COMPLETED)
-                ->pluck('id')
-                ->all();
+            }
+            $remaining = max(0, $quota - max(0, (int) $user->u) - max(0, (int) $user->d));
+            // Cents times bytes can exceed PHP's integer range. Round down once, at the end.
+            $order->surplus_amount = BigInteger::of($paid)->multipliedBy($remaining)->quotient($quota)->toInt();
+            $order->surplus_order_ids = [$lastOneTimeOrder->id];
         } else {
-            $orders = Order::query()
-                ->where('user_id', $user->id)
-                ->whereNotIn('period', [Plan::PERIOD_RESET_TRAFFIC, Plan::PERIOD_ONETIME])
-                ->where('status', Order::STATUS_COMPLETED)
-                ->get();
+            $now = now()->timestamp;
+            $orders = $this->currentPeriodOrders($user, $now);
 
             if ($orders->isEmpty()) {
                 $order->surplus_amount = 0;
@@ -296,45 +318,130 @@ class OrderService
                 return;
             }
 
-            $orderAmountSum = $orders->sum(fn($item) => $item->total_amount + $item->balance_amount + $item->surplus_amount - $item->surplus_credit);
+            $orderAmountSum = $orders->sum(fn (Order $item) => $this->netOrderValue($item));
             $orderMonthSum = $orders->sum(fn($item) => self::STR_TO_TIME[PlanService::getPeriodKey($item->period)] ?? 0);
-            $firstOrderAt = $orders->min('created_at');
-            $expiredAt = Carbon::createFromTimestamp($firstOrderAt)->addMonths($orderMonthSum);
-
-            $now = now();
-            $totalSeconds = $expiredAt->timestamp - $firstOrderAt;
-            $remainSeconds = max(0, $expiredAt->timestamp - $now->timestamp);
-            $cycleRatio = $totalSeconds > 0 ? $remainSeconds / $totalSeconds : 0;
-
-            $plan = Plan::find($user->plan_id);
-            $totalTraffic = $plan?->transfer_enable * $orderMonthSum;
-            $usedTraffic = Helper::transferToGB($user->u + $user->d);
-            $remainTraffic = max(0, $totalTraffic - $usedTraffic);
-            $trafficRatio = $totalTraffic > 0 ? $remainTraffic / $totalTraffic : 0;
-
-            $ratio = $cycleRatio;
+            $totalSeconds = $user->expired_at - $orders->first()->service_at;
+            $remainSeconds = max(0, $user->expired_at - $now);
+            $ratio = $totalSeconds > 0 ? min(1, $remainSeconds / $totalSeconds) : 0;
             if (admin_setting('change_order_event_id', 0) == 1) {
-                $ratio = min($cycleRatio, $trafficRatio);
+                $totalTraffic = $user->plan?->transfer_enable * $orderMonthSum;
+                $usedTraffic = Helper::transferToGB($user->u + $user->d);
+                $trafficRatio = $totalTraffic > 0 ? max(0, $totalTraffic - $usedTraffic) / $totalTraffic : 0;
+                $ratio = min($ratio, $trafficRatio);
             }
-
 
             $order->surplus_amount = (int) max(0, $orderAmountSum * $ratio);
             $order->surplus_order_ids = $orders->pluck('id')->all();
         }
     }
 
-    public function paid(string $callbackNo)
+    private function netOrderValue(Order $order): int
+    {
+        return $order->total_amount + $order->balance_amount + $order->surplus_amount - $order->surplus_credit;
+    }
+
+    private function currentPeriodOrders(User $user, int $now): Collection
+    {
+        // Older orders predate paid_at. updated_at may instead reflect a later commission review.
+        $history = Order::query()->where('user_id', $user->id)
+            ->whereIn('status', [Order::STATUS_COMPLETED, Order::STATUS_DISCOUNTED])
+            ->select(['id', 'plan_id', 'status', 'type', 'period', 'total_amount', 'balance_amount', 'surplus_amount', 'surplus_credit'])
+            ->selectRaw('COALESCE(NULLIF(paid_at, 0), created_at) AS service_at')
+            ->orderBy('service_at')->orderBy('id')->cursor();
+
+        $orders = collect();
+        $paidThrough = 0;
+        foreach ($history as $previous) {
+            $period = PlanService::getPeriodKey($previous->period);
+            if ($period === Plan::PERIOD_RESET_TRAFFIC) {
+                continue;
+            }
+            $months = self::STR_TO_TIME[$period] ?? 0;
+            $at = (int) $previous->service_at;
+            if (!$months || (int) $previous->plan_id !== (int) $user->plan_id
+                || (int) $previous->status !== Order::STATUS_COMPLETED || $at <= 0 || $at > $now) {
+                $orders = collect();
+                $paidThrough = 0;
+                continue;
+            }
+            if ($at > $paidThrough || in_array((int) $previous->type, [Order::TYPE_NEW_PURCHASE, Order::TYPE_UPGRADE], true)) {
+                $orders = collect();
+                $paidThrough = $at;
+            }
+            $orders->push($previous);
+            $paidThrough = Carbon::createFromTimestamp($paidThrough)->addMonths($months)->timestamp;
+        }
+
+        // A later administrative grant alone cannot make an exhausted paid period refundable.
+        return $paidThrough > $now ? $orders : collect();
+    }
+
+    public function paid(
+        string $callbackNo,
+        ?int $verifiedPaymentId = null,
+        ?string $transactionNo = null,
+        ?OrderPaymentAttempt $attempt = null,
+        ?int $verifiedGross = null,
+        bool $requireIssuedQuote = false
+    )
     {
         try {
-            [$order, $shouldDispatch] = DB::transaction(function () use ($callbackNo) {
+            [$order, $shouldDispatch] = DB::transaction(function () use ($callbackNo, $verifiedPaymentId, $transactionNo, $attempt, $verifiedGross, $requireIssuedQuote) {
                 $order = $this->lockCurrentOrder();
                 if (!$order) {
                     throw new \RuntimeException('Order not found.');
                 }
+                $reference = $transactionNo ?? $callbackNo;
+                $expected = null;
+                if ($verifiedPaymentId !== null) {
+                    if ($requireIssuedQuote && !$attempt && !OrderPaymentAttempt::hasIssuedPublicQuote($order, $verifiedPaymentId)) {
+                        throw new \RuntimeException('No matching quote was issued by the disabled payment channel.');
+                    }
+                    $attempt = OrderPaymentAttempt::confirm($order, $verifiedPaymentId, $reference, $attempt);
+                    if ($attempt) {
+                        $expected = $attempt->total_amount + (int) $attempt->handling_amount;
+                    } elseif ((int) $order->payment_id === $verifiedPaymentId) {
+                        $expected = $order->total_amount + (int) $order->handling_amount;
+                    }
+                    if ($transactionNo !== null && !OrderPaymentReceipt::record($order, $verifiedPaymentId,
+                        $transactionNo, $callbackNo, $attempt, $expected, $verifiedGross)) {
+                        return [$order, false];
+                    }
+                }
                 if ((int) $order->status !== Order::STATUS_PENDING) {
+                    if ((int) $order->status === Order::STATUS_CANCELLED && $verifiedPaymentId !== null) {
+                        DB::table('v2_cancelled_order_payments')->upsert([[
+                            'order_id' => $order->id,
+                            'trade_no' => $order->trade_no,
+                            'payment_id' => $verifiedPaymentId,
+                            'reference_hash' => hash('sha256', $reference),
+                            'transaction_no' => $reference,
+                            'callback_no' => $callbackNo,
+                            'expected_amount' => $expected ?? $verifiedGross,
+                            'received_at' => time(),
+                        ]], ['order_id', 'payment_id', 'reference_hash'], ['reference_hash']);
+                    }
                     return [$order, false];
                 }
 
+                if ($verifiedPaymentId === null && $callbackNo === 'manual_operation') {
+                    PlanService::validateCheckoutCapacity($order);
+                }
+                if ($verifiedPaymentId !== null) {
+                    if ($verifiedGross !== null && ($attempt ? $verifiedGross !== $expected : $verifiedGross < $order->total_amount)) {
+                        throw new \RuntimeException('Verified payment amount does not match the order quote.');
+                    }
+                    if ($attempt) {
+                        $order->total_amount = $attempt->total_amount;
+                        $order->handling_amount = $attempt->handling_amount;
+                    } elseif ($verifiedGross !== null && $verifiedGross !== $expected) {
+                        $order->handling_amount = $verifiedGross - $order->total_amount;
+                    } elseif ($expected === null) {
+                        // A pre-upgrade callback for an earlier channel has no recoverable fee quote.
+                        $order->handling_amount = null;
+                    }
+                    $order->payment_id = $verifiedPaymentId;
+                }
                 $order->status = Order::STATUS_PROCESSING;
                 $order->paid_at = time();
                 $order->callback_no = $callbackNo;
@@ -349,6 +456,9 @@ class OrderService
 
             if ($shouldDispatch) {
                 OrderHandleJob::dispatchSync($order->trade_no);
+                if ($verifiedPaymentId !== null) {
+                    HookManager::call('payment.notify.success', $order);
+                }
             }
         } catch (\Exception $e) {
             Log::error($e);
@@ -368,6 +478,8 @@ class OrderService
 
                 HookManager::call('order.cancel.before', $order);
 
+                $couponToRelease = $order->coupon_quota_deducted ? $order->coupon_id : null;
+                $order->coupon_quota_deducted = false;
                 $order->status = Order::STATUS_CANCELLED;
                 if (!$order->save()) {
                     throw new \RuntimeException('Failed to save order status.');
@@ -377,6 +489,9 @@ class OrderService
                     if (!$userService->addBalance($order->user_id, $order->balance_amount)) {
                         throw new \RuntimeException('Failed to add balance.');
                     }
+                }
+                if ($couponToRelease !== null) {
+                    Coupon::whereKey($couponToRelease)->whereNotNull('limit_use')->increment('limit_use');
                 }
 
                 return $order;
@@ -405,6 +520,13 @@ class OrderService
         $this->user->device_limit = $deviceLimit;
     }
 
+    private function requireTrafficReset(): void
+    {
+        if (!app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_ORDER)) {
+            throw new \RuntimeException('流量重置失败');
+        }
+    }
+
     private function buyByPeriod(Order $order, Plan $plan)
     {
         // change plan process
@@ -412,9 +534,6 @@ class OrderService
             $this->user->expired_at = time();
         }
         $this->user->transfer_enable = $plan->transfer_enable * 1073741824;
-        // 从一次性转换到循环或者新购的时候，重置流量
-        if ($this->user->expired_at === NULL || $order->type === Order::TYPE_NEW_PURCHASE)
-            app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_ORDER);
         $this->user->plan_id = $plan->id;
         $this->user->group_id = $plan->group_id;
         $this->user->expired_at = $this->getTime($order->period, $this->user->expired_at);
@@ -422,7 +541,6 @@ class OrderService
 
     private function buyByOneTime(Plan $plan)
     {
-        app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_ORDER);
         $this->user->transfer_enable = $plan->transfer_enable * 1073741824;
         $this->user->plan_id = $plan->id;
         $this->user->group_id = $plan->group_id;
@@ -447,17 +565,6 @@ class OrderService
         }
 
         throw new ApiException('无效的套餐周期');
-    }
-
-    private function openEvent($eventId)
-    {
-        switch ((int) $eventId) {
-            case 0:
-                break;
-            case 1:
-                app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_ORDER);
-                break;
-        }
     }
 
     protected function applyCoupon(string $couponCode): void

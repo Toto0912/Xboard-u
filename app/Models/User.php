@@ -185,8 +185,8 @@ class User extends Authenticatable
      */
     public function isActive(): bool
     {
-        return !$this->banned && 
-               ($this->expired_at === null || $this->expired_at > time()) &&
+        return !$this->banned &&
+               ($this->expired_at === null || $this->expired_at > now()->timestamp) &&
                $this->plan_id !== null;
     }
 
@@ -194,8 +194,8 @@ class User extends Authenticatable
      * 检查用户是否可用节点流量且充足
      */
     public function isAvailable(): bool
-    {     
-        return $this->isActive() && $this->getRemainingTraffic() > 0;   
+    {
+        return $this->group_id > 0 && $this->isActive() && $this->getRemainingTraffic() > 0;
     }
 
     /**

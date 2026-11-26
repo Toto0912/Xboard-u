@@ -123,28 +123,31 @@ export function UserEditDrawer({
       return;
     }
 
-    const payload: Record<string, unknown> = {
-      id: user.id,
-      email: email.trim(),
-      invite_user_email: inviteUserEmail.trim() || null,
-      balance: Number(balance) || 0,
-      commission_balance: Number(commissionBalance) || 0,
-      expired_at: expiredAt.trim()
-        ? Math.floor(Date.parse(expiredAt) / 1000)
-        : null,
-      plan_id: planId === 'none' ? null : Number(planId),
-      banned: banned === '1',
-      commission_type: Number(commissionType) || 0,
-      commission_rate:
-        commissionRate.trim() !== '' ? Number(commissionRate) : null,
-      discount: discount.trim() !== '' ? Number(discount) : null,
-      speed_limit: speedLimit.trim() !== '' ? Number(speedLimit) : null,
-      device_limit: deviceLimit.trim() !== '' ? Number(deviceLimit) : null,
-      is_admin: isAdmin,
-      is_staff: isStaff,
-      remarks: remarks.trim() || null,
+    const payload: Record<string, unknown> = { id: user.id };
+    const changed = (key: string, value: unknown, original: unknown) => {
+      if (value !== original) payload[key] = value;
     };
-
+    const nullableNumber = (value: string) => value.trim() === '' ? null : Number(value);
+    changed('email', email.trim(), user.email);
+    changed('invite_user_email', inviteUserEmail.trim() || null, user.invite_user?.email ?? null);
+    changed('balance', Number(balance) || 0, user.balance ?? 0);
+    changed('commission_balance', Number(commissionBalance) || 0, user.commission_balance ?? 0);
+    if ('balance' in payload) payload.expected_balance = user.balance ?? 0;
+    if ('commission_balance' in payload) payload.expected_commission_balance = user.commission_balance ?? 0;
+    // The picker only displays minutes. Preserve original seconds when the date was not edited.
+    if (expiredAt !== toDatetimeLocal(user.expired_at)) {
+      payload.expired_at = expiredAt ? Math.floor(Date.parse(expiredAt) / 1000) : null;
+    }
+    changed('plan_id', planId === 'none' ? null : Number(planId), user.plan_id ?? null);
+    changed('banned', banned === '1', Boolean(user.banned));
+    changed('commission_type', Number(commissionType) || 0, user.commission_type ?? 0);
+    changed('commission_rate', nullableNumber(commissionRate), user.commission_rate ?? null);
+    changed('discount', nullableNumber(discount), user.discount ?? null);
+    changed('speed_limit', nullableNumber(speedLimit), user.speed_limit ?? null);
+    changed('device_limit', nullableNumber(deviceLimit), user.device_limit ?? null);
+    changed('is_admin', isAdmin, Boolean(user.is_admin));
+    changed('is_staff', isStaff, Boolean(user.is_staff));
+    changed('remarks', remarks.trim() || null, user.remarks?.trim() || null);
     if (uDirty) {
       payload.u = Math.max(0, Math.round((Number(uGb) || 0) * 1073741824));
     }

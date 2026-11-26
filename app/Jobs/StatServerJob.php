@@ -24,6 +24,7 @@ class StatServerJob implements ShouldQueue
     protected array $server;
     protected string $protocol;
     protected string $recordType;
+    protected ?int $recordAt = null;
 
     public $tries = 3;
     public $timeout = 60;
@@ -40,7 +41,7 @@ class StatServerJob implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct(array $server, array $data, $protocol, string $recordType = 'd')
+    public function __construct(array $server, array $data, $protocol, string $recordType = 'd', ?int $recordAt = null)
     {
         $this->onQueue('stat');
         $u = $d = 0;
@@ -49,13 +50,14 @@ class StatServerJob implements ShouldQueue
         $this->server = $server;
         $this->protocol = $protocol;
         $this->recordType = $recordType;
+        $this->recordAt = $recordAt ?? ($recordType === 'm' ? strtotime(date('Y-m-01')) : strtotime(date('Y-m-d')));
     }
 
     public function handle(): void
     {
-        $recordAt = $this->recordType === 'm'
+        $recordAt = $this->recordAt ?? ($this->recordType === 'm'
             ? strtotime(date('Y-m-01'))
-            : strtotime(date('Y-m-d'));
+            : strtotime(date('Y-m-d')));
 
         if ($this->totals !== null) {
             [$u, $d] = $this->totals;

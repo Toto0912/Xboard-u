@@ -7,6 +7,7 @@ use Illuminate\Console\Command;
 use App\Models\Order;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CheckCommission extends Command
 {
@@ -50,7 +51,7 @@ class CheckCommission extends Command
         if ((int)admin_setting('commission_auto_check_enable', 1)) {
             Order::where('commission_status', 0)
                 ->where('invite_user_id', '!=', NULL)
-                ->where('status', 3)
+                ->where('status', Order::STATUS_COMPLETED)
                 ->where('updated_at', '<=', strtotime('-3 day', time()))
                 ->update([
                     'commission_status' => 1
@@ -60,32 +61,25 @@ class CheckCommission extends Command
 
     public function autoPayCommission()
     {
-        $orders = Order::where('commission_status', 1)
-            ->where('invite_user_id', '!=', NULL)
-            ->get();
-        foreach ($orders as $order) {
-            try{
-                DB::beginTransaction();
-                if (!$this->payHandle($order->invite_user_id, $order)) {
-                    DB::rollBack();
-                    continue;
+        $pending = Order::where('commission_status', 1)->whereNotNull('invite_user_id')
+            ->whereIn('status', Order::COMMISSION_ELIGIBLE_STATUSES);
+        foreach ((clone $pending)->select('id')->lazyById(200) as $candidate) {
+            DB::transaction(function () use ($pending, $candidate) {
+                $order = (clone $pending)->lockForUpdate()->find($candidate->id);
+                if (!$order) {
+                    return;
                 }
-                $order->commission_status = 2;
+                $order->commission_status = $this->creditInviters($order) ? 2 : 3;
                 if (!$order->save()) {
-                    DB::rollBack();
-                    continue;
+                    throw new \RuntimeException("Failed to settle commission for order {$order->id}");
                 }
-                DB::commit();
-            } catch (\Exception $e){
-                DB::rollBack();
-                throw $e;
-            }
+            }, 3);
         }
     }
 
-    public function payHandle($inviteUserId, Order $order)
+    private function creditInviters(Order $order): bool
     {
-        $level = 3;
+        $inviteUserId = $order->invite_user_id;
         if ((int)admin_setting('commission_distribution_enable', 0)) {
             $commissionShareLevels = [
                 0 => (int)admin_setting('commission_distribution_l1'),
@@ -97,29 +91,49 @@ class CheckCommission extends Command
                 0 => 100
             ];
         }
-        for ($l = 0; $l < $level; $l++) {
-            $inviter = User::find($inviteUserId);
-            if (!$inviter) continue;
-            if (!isset($commissionShareLevels[$l])) continue;
-            $commissionBalance = $order->commission_balance * ($commissionShareLevels[$l] / 100);
+        // Validate the payable chain before the first wallet credit, including zero-share levels.
+        $seen = [$order->user_id => true];
+        $recipients = [];
+        foreach ($commissionShareLevels as $percentage) {
+            if (!$inviteUserId || isset($seen[$inviteUserId])) {
+                break;
+            }
+            $inviter = User::lockForUpdate()->find($inviteUserId);
+            if (!$inviter) {
+                break;
+            }
+            $seen[$inviteUserId] = true;
+            $recipients[] = [$inviter, $percentage];
+            $inviteUserId = $inviter->invite_user_id;
+        }
+        if (isset($seen[$inviteUserId])) {
+            Log::warning('Commission withheld: circular invitation', ['order_id' => $order->id, 'user_id' => $inviteUserId]);
+            return false;
+        }
+
+        $wallet = (int)admin_setting('withdraw_close_enable', 0) ? 'balance' : 'commission_balance';
+        $totalPercentage = 0;
+        $allocatedCents = 0;
+        foreach ($recipients as [$inviter, $percentage]) {
+            // Round the cumulative entitlement so per-level rounding cannot create or lose cents.
+            $totalPercentage += $percentage;
+            $totalCents = (int) round($order->commission_balance * $totalPercentage / 100, 0, PHP_ROUND_HALF_UP);
+            $commissionBalance = $totalCents - $allocatedCents;
+            $allocatedCents = $totalCents;
             if (!$commissionBalance) continue;
-            if ((int)admin_setting('withdraw_close_enable', 0)) {
-                $inviter->increment('balance', $commissionBalance);
-            } else {
-                $inviter->increment('commission_balance', $commissionBalance);
+            if ($inviter->increment($wallet, $commissionBalance) === false) {
+                throw new \RuntimeException("Failed to credit commission for user {$inviter->id}");
             }
-            if (!$inviter->save()) {
-                DB::rollBack();
-                return false;
-            }
-            CommissionLog::create([
-                'invite_user_id' => $inviteUserId,
+            $log = new CommissionLog([
+                'invite_user_id' => $inviter->id,
                 'user_id' => $order->user_id,
                 'trade_no' => $order->trade_no,
                 'order_amount' => $order->total_amount,
                 'get_amount' => $commissionBalance
             ]);
-            $inviteUserId = $inviter->invite_user_id;
+            if (!$log->save()) {
+                throw new \RuntimeException("Failed to record commission for order {$order->id}");
+            }
             // update order actual commission balance
             $order->actual_commission_balance = $order->actual_commission_balance + $commissionBalance;
         }

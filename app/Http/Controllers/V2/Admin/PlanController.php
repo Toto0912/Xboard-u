@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\PlanSave;
 use App\Models\Order;
 use App\Models\Plan;
 use App\Models\User;
+use App\Services\NodeSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -38,26 +39,20 @@ class PlanController extends Controller
         $params = $request->validated();
         
         if ($request->input('id')) {
-            $plan = Plan::find($request->input('id'));
-            if (!$plan) {
-                return $this->fail([400202, '该订阅不存在']);
-            }
-            
-            DB::beginTransaction();
             try {
-                if ($request->input('force_update')) {
-                    User::where('plan_id', $plan->id)->update([
-                        'group_id' => $params['group_id'],
-                        'transfer_enable' => $params['transfer_enable'] * 1073741824,
-                        'speed_limit' => $params['speed_limit'],
-                        'device_limit' => $params['device_limit'],
-                    ]);
-                }
-                $plan->update($params);
-                DB::commit();
-                return $this->success(true);
+                return DB::transaction(function () use ($request, $params) {
+                    $plan = Plan::query()->lockForUpdate()->find($params['id']);
+                    if (!$plan) {
+                        return $this->fail([400202, '该订阅不存在']);
+                    }
+                    $plan->fill($params);
+                    if ($request->boolean('force_update')) {
+                        $this->updatePlanUsers($plan);
+                    }
+                    $plan->save();
+                    return $this->success(true);
+                }, 3);
             } catch (\Exception $e) {
-                DB::rollBack();
                 Log::error($e);
                 return $this->fail([500, '保存失败']);
             }
@@ -66,6 +61,29 @@ class PlanController extends Controller
             return $this->fail([500, '创建失败']);
         }
         return $this->success(true);
+    }
+
+    private function updatePlanUsers(Plan $plan): void
+    {
+        $updates = [
+            'group_id' => $plan->group_id,
+            'transfer_enable' => $plan->transfer_enable * 1073741824,
+            'speed_limit' => $plan->speed_limit,
+            'device_limit' => $plan->device_limit,
+        ];
+        $groups = [];
+        User::where('plan_id', $plan->id)->select('id', 'group_id')->lockForUpdate()
+            ->chunkById(500, function ($users) use ($updates, &$groups) {
+                foreach ($users as $user) {
+                    $groups[(int) $user->group_id] = true;
+                }
+                $groups[(int) $updates['group_id']] = true;
+                User::whereIntegerInRaw('id', $users->modelKeys())->update($updates);
+            });
+        unset($groups[0]);
+        if ($groups) {
+            DB::afterCommit(fn () => NodeSyncService::queueRosterRefreshes(array_keys($groups)));
+        }
     }
 
     public function drop(Request $request)

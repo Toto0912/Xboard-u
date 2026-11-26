@@ -45,6 +45,7 @@ class CouponService
             if (!$this->coupon->save()) {
                 return false;
             }
+            $order->coupon_quota_deducted = true;
         }
         return true;
     }

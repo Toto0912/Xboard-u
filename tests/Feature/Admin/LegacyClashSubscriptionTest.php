@@ -85,8 +85,8 @@ class LegacyClashSubscriptionTest extends TestCase
 
     public function test_upgrade_replaces_only_known_broken_default_and_ignores_old_cache(): void
     {
-        $legacy = file_get_contents(base_path('tests/Fixtures/legacy-clash-default.yaml'));
-        $this->assertSame('f76765bcbf2213c1c52c2c85ef504cbc51b52278f370220724ff5fe80fa7eb7d', hash('sha256', trim(str_replace("\r\n", "\n", $legacy))));
+        $legacy = str_replace("\r\n", "\n", file_get_contents(base_path('tests/Fixtures/legacy-clash-default.yaml')));
+        $this->assertSame('f76765bcbf2213c1c52c2c85ef504cbc51b52278f370220724ff5fe80fa7eb7d', hash('sha256', trim($legacy)));
         $otherTemplates = DB::table('v2_subscribe_templates')->where('name', '!=', 'clash')->pluck('content', 'name')->all();
         $migration = require database_path('migrations/2026_11_12_000001_fix_legacy_clash_subscription_template.php');
         foreach ([$legacy, str_replace("\n", "\r\n", $legacy)] as $input) {

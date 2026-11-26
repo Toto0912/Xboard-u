@@ -10,6 +10,7 @@ use App\Models\ServerMachineLoadHistory;
 use App\Services\NodeSyncService;
 use App\Services\MachineInstallCommand;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class MachineController extends Controller
 {
@@ -60,6 +61,9 @@ class MachineController extends Controller
                 $update['is_active'] = $params['is_active'];
             }
             $machine->update($update);
+            if ($machine->wasChanged('is_active') && !$machine->is_active) {
+                NodeSyncService::notifyMachineCredentialsChanged($machine->id);
+            }
             return $this->success(true);
         }
 
@@ -89,6 +93,7 @@ class MachineController extends Controller
         $machine = ServerMachine::find($params['id']);
         $token = ServerMachine::generateToken();
         $machine->update(['token' => $token]);
+        NodeSyncService::notifyMachineCredentialsChanged($machine->id);
 
         return $this->success(['token' => $token]);
     }
@@ -135,12 +140,11 @@ class MachineController extends Controller
         $machine = ServerMachine::find($params['id']);
         $machineId = $machine->id;
 
-        // Detach nodes first (sets machine_id = null), then delete and notify
-        Server::where('machine_id', $machineId)->update(['machine_id' => null]);
-        $machine->delete();
-
-        // Notify with empty node list so WS process cleans up registry
-        NodeSyncService::notifyMachineNodesChanged($machineId);
+        DB::transaction(function () use ($machine, $machineId) {
+            Server::where('machine_id', $machineId)->update(['machine_id' => null]);
+            $machine->delete();
+            NodeSyncService::notifyMachineCredentialsChanged($machineId);
+        });
 
         return $this->success(true);
     }

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\V2\Server;
 
 use App\Http\Controllers\Controller;
 use App\Services\ServerService;
+use App\Services\TrafficBatchCapability;
+use App\Services\TrafficBatchReceiver;
 use App\WebSocket\NodeWorker;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -35,8 +37,25 @@ class ServerController extends Controller
         }
 
         return response()->json([
-            'websocket' => $websocket
+            'capabilities' => ['traffic_batch_v1' => TrafficBatchCapability::available()],
+            'websocket' => $websocket,
+            'settings' => [
+                'push_interval' => (int) admin_setting('server_push_interval', 60),
+                'pull_interval' => (int) admin_setting('server_pull_interval', 60),
+            ],
         ]);
+    }
+
+    public function trafficBatch(Request $request, TrafficBatchReceiver $receiver): JsonResponse
+    {
+        $body = $request->getContent();
+        abort_if(strlen($body) > 131072, 413, 'Traffic batch exceeds 128 KiB');
+        $input = json_decode($body, false, 8);
+        abort_unless(is_object($input), 422, 'Expected a JSON object');
+        $node = $request->attributes->get('node_info');
+        abort_unless($node, 403, 'An authorized node is required');
+        $batchId = $receiver->accept($node, $input->batch_id ?? null, $input->traffic ?? null);
+        return response()->json(['batch_id' => $batchId]);
     }
 
     /**

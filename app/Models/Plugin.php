@@ -33,7 +33,6 @@ class Plugin extends Model
         'epay',           // EPay
         'alipay_f2f',     // Alipay F2F
         'btcpay',         // BTCPay
-        'coinbase',       // Coinbase
         'coin_payments',  // CoinPayments
         'mgate',          // MGate
         'telegram',       // Telegram

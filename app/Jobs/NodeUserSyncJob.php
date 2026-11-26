@@ -27,12 +27,11 @@ class NodeUserSyncJob implements ShouldQueue
 
     public function handle(): void
     {
-        $user = User::find($this->userId);
-
         if ($this->action === 'updated' || $this->action === 'created') {
             if ($this->oldGroupId) {
                 NodeSyncService::notifyUserRemovedFromGroup($this->userId, $this->oldGroupId);
             }
+            $user = User::query()->useWritePdo()->find($this->userId);
             if ($user) {
                 NodeSyncService::notifyUserChanged($user);
             }

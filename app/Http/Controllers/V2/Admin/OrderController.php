@@ -180,20 +180,28 @@ class OrderController extends Controller
             'commission_status'
         ]);
 
-        $order = Order::where('trade_no', $request->input('trade_no'))
-            ->first();
-        if (!$order) {
-            return $this->fail([400202, '订单不存在']);
-        }
-
         try {
-            $order->update($params);
+            return DB::transaction(function () use ($request, $params) {
+                $order = Order::where('trade_no', $request->input('trade_no'))->lockForUpdate()->first();
+                if (!$order) {
+                    return $this->fail([400202, '订单不存在']);
+                }
+                if ($params && (int) $order->commission_status === 2) {
+                    return $this->fail([409, '佣金已发放，无法修改审批状态']);
+                }
+                if ((int) ($params['commission_status'] ?? 0) === 1
+                    && !in_array((int) $order->status, Order::COMMISSION_ELIGIBLE_STATUSES, true)) {
+                    return $this->fail([409, '仅已完成或已折抵的订单可批准佣金']);
+                }
+                if (!$order->update($params)) {
+                    return $this->fail([500, '更新失败']);
+                }
+                return $this->success(true);
+            });
         } catch (\Exception $e) {
             Log::error($e);
             return $this->fail([500, '更新失败']);
         }
-
-        return $this->success(true);
     }
 
     public function assign(OrderAssign $request)
@@ -209,19 +217,19 @@ class OrderController extends Controller
             return $this->fail([400202, '该订阅不存在']);
         }
 
-        $userService = new UserService();
-        if ($userService->isNotCompleteOrderByUserId($user->id)) {
-            return $this->fail([400, '该用户还有待支付的订单，无法分配']);
-        }
-
-        try {
-            DB::beginTransaction();
+        return DB::transaction(function () use ($request, $plan, $user) {
+            $plan = PlanService::lockForSale($plan);
+            $user = User::lockForUpdate()->findOrFail($user->id);
+            if (app(UserService::class)->isNotCompleteOrderByUserId($user->id)) {
+                return $this->fail([400, '该用户还有待支付的订单，无法分配']);
+            }
             $order = new Order();
             $orderService = new OrderService($order);
             $order->user_id = $user->id;
             $order->plan_id = $plan->id;
             $period = $request->input('period');
             $order->period = PlanService::getPeriodKey((string) $period);
+            (new PlanService($plan))->validateSeat($user, $order->period);
             $order->trade_no = Helper::guid();
             $order->total_amount = $request->input('total_amount');
 
@@ -238,15 +246,9 @@ class OrderController extends Controller
             $orderService->setInvite($user);
 
             if (!$order->save()) {
-                DB::rollBack();
                 return $this->fail([500, '订单创建失败']);
             }
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
-        }
-
-        return $this->success($order->trade_no);
+            return $this->success($order->trade_no);
+        }, 3);
     }
 }

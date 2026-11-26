@@ -30,8 +30,8 @@ class ForkUpdateTest extends TestCase
         Cache::forever(UpdateService::CACHE_VERSION, '2.3.0-xboard-u');
 
         $service = new UpdateService();
-        $this->assertSame('v2.4.0', $service->getCurrentVersion());
-        $this->assertSame('v2.4.0', $service->checkForUpdates()['current_version']);
+        $this->assertSame('v2.4.1', $service->getCurrentVersion());
+        $this->assertSame('v2.4.1', $service->checkForUpdates()['current_version']);
         Process::assertNothingRan();
     }
 }

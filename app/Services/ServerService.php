@@ -60,7 +60,7 @@ class ServerService
      */
     public static function getMachineNodes(ServerMachine $machine): Collection
     {
-        return Server::where('machine_id', $machine->id)
+        return Server::query()->useWritePdo()->where('machine_id', $machine->id)
             ->where('enabled', true)
             ->orderBy('sort', 'ASC')
             ->get();
@@ -73,7 +73,7 @@ class ServerService
      */
     public static function getAvailableServers(User $user): array
     {
-        $servers = Server::with('parent')->whereJsonContains('group_ids', (string) $user->group_id)
+        $servers = Server::with('parent')->whereInGroup($user->group_id)
             ->where('show', true)
             ->where(function ($query) {
                 $query->whereNull('transfer_enable')
@@ -114,12 +114,13 @@ class ServerService
         if (empty($groupIds)) {
             return collect();
         }
-        $users = User::toBase()
+        $users = User::toBase()->useWritePdo()
             ->whereIn('group_id', $groupIds)
+            ->whereNotNull('plan_id')
             ->whereRaw('u + d < transfer_enable')
             ->where(function ($query) {
-                $query->where('expired_at', '>=', time())
-                    ->orWhere('expired_at', NULL);
+                $query->where('expired_at', '>', now()->timestamp)
+                    ->orWhereNull('expired_at');
             })
             ->where('banned', 0)
             ->select([
@@ -129,7 +130,8 @@ class ServerService
                 'device_limit'
             ])
             ->get();
-        return HookManager::filter('server.users.get', $users, $node);
+        // Filtering can retain sparse keys. REST and WebSocket consumers both expect a JSON list.
+        return collect(HookManager::filter('server.users.get', $users, $node))->values();
     }
 
     // 获取路由规则
@@ -431,7 +433,7 @@ class ServerService
      */
     public static function getServer($serverId, ?string $serverType = null): Server | null
     {
-        return Server::query()
+        return Server::query()->useWritePdo()
             ->when($serverType, function ($query) use ($serverType) {
                 $query->where('type', Server::normalizeType($serverType));
             })

@@ -19,30 +19,33 @@ class StatUserJob implements ShouldQueue
     protected array $server;
     protected string $protocol;
     protected string $recordType;
+    protected ?int $recordAt = null;
     public $tries = 3;
     public $timeout = 60;
     public $maxExceptions = 3;
 
     public function backoff(): array { return [1, 5, 10]; }
 
-    public function __construct(array $server, array $data, string $protocol, string $recordType = 'd')
+    public function __construct(array $server, array $data, string $protocol, string $recordType = 'd', ?int $recordAt = null)
     {
         $this->onQueue('stat');
         $this->data = $data;
         $this->server = $server;
         $this->protocol = $protocol;
         $this->recordType = $recordType;
+        $this->recordAt = $recordAt ?? ($recordType === 'm' ? strtotime(date('Y-m-01')) : strtotime(date('Y-m-d')));
     }
 
     public function handle(): void
     {
-        $recordAt = $this->recordType === 'm' ? strtotime(date('Y-m-01')) : strtotime(date('Y-m-d'));
+        $recordAt = $this->recordAt ?? ($this->recordType === 'm' ? strtotime(date('Y-m-01')) : strtotime(date('Y-m-d')));
         $now = time();
         $rows = [];
+        $multiply = TrafficBatch::byteMultiplier($this->server['rate'], dailyStat: true);
         foreach ($this->data as $uid => $v) {
             $rows[] = ['user_id' => (int) $uid, 'server_rate' => $this->server['rate'],
                 'record_at' => $recordAt, 'record_type' => $this->recordType,
-                'u' => intval($v[0] * $this->server['rate']), 'd' => intval($v[1] * $this->server['rate']),
+                'u' => $multiply($v[0]), 'd' => $multiply($v[1]),
                 'created_at' => $now, 'updated_at' => $now];
         }
         usort($rows, fn ($a, $b) => $a['user_id'] <=> $b['user_id']);

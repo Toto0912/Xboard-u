@@ -25,7 +25,16 @@ class TrafficResetService
       return false;
     }
 
-    return $this->performReset($user, $triggerSource);
+    // A scheduler or user request may have selected this row just before its schedule changed.
+    return $user->getConnection()->transaction(function () use ($user, $triggerSource) {
+      $current = $user->newQuery()->lockForUpdate()->find($user->getKey());
+      if (!$current || !$current->shouldResetTraffic() || !$this->performReset($current, $triggerSource)) {
+        return false;
+      }
+      $user->setRawAttributes($current->getAttributes(), true);
+      $user->setRelations($current->getRelations());
+      return true;
+    });
   }
 
   /**
@@ -113,7 +122,7 @@ class TrafficResetService
    */
   private function getNextMonthFirstDay(Carbon $from): Carbon
   {
-    return $from->copy()->addMonth()->startOfMonth();
+    return $from->copy()->startOfMonth()->addMonth();
   }
 
   /**
@@ -131,22 +140,14 @@ class TrafficResetService
     $resetDay = $expiredAt->day;
     $resetTime = [$expiredAt->hour, $expiredAt->minute, $expiredAt->second];
     
-    $currentMonthTarget = $from->copy()->day($resetDay)->setTime(...$resetTime);
-    if ($currentMonthTarget->timestamp > $from->timestamp) {
-      return $currentMonthTarget;
+    $month = $from->copy()->startOfMonth();
+    $candidate = $month->copy()->day(min($resetDay, $month->daysInMonth))->setTime(...$resetTime);
+    if ($candidate->greaterThan($from)) {
+      return $candidate;
     }
-    
-    $nextMonthTarget = $from->copy()->startOfMonth()->addMonths(1)->day($resetDay)->setTime(...$resetTime);
-    
-    if ($nextMonthTarget->month !== ($from->month % 12) + 1) {
-      $nextMonth = ($from->month % 12) + 1;
-      $nextYear = $from->year + ($from->month === 12 ? 1 : 0);
-      $lastDayOfNextMonth = Carbon::create($nextYear, $nextMonth, 1)->endOfMonth()->day;
-      $targetDay = min($resetDay, $lastDayOfNextMonth);
-      $nextMonthTarget = Carbon::create($nextYear, $nextMonth, $targetDay)->setTime(...$resetTime);
-    }
-    
-    return $nextMonthTarget;
+
+    $month->addMonth();
+    return $month->day(min($resetDay, $month->daysInMonth))->setTime(...$resetTime);
   }
 
   /**
@@ -169,25 +170,12 @@ class TrafficResetService
   private function getNextYearlyReset(User $user, Carbon $from): Carbon
   {
     $expiredAt = Carbon::createFromTimestamp($user->expired_at, config('app.timezone'));
-    $resetMonth = $expiredAt->month;
-    $resetDay = $expiredAt->day;
-    $resetTime = [$expiredAt->hour, $expiredAt->minute, $expiredAt->second];
-
-    $currentYearTarget = $from->copy()->month($resetMonth)->day($resetDay)->setTime(...$resetTime);
-    if ($currentYearTarget->timestamp > $from->timestamp) {
-      return $currentYearTarget;
-    }
-    
-    $nextYearTarget = $from->copy()->startOfYear()->addYears(1)->month($resetMonth)->day($resetDay)->setTime(...$resetTime);
-    
-    if ($nextYearTarget->month !== $resetMonth) {
-      $nextYear = $from->year + 1;
-      $lastDayOfMonth = Carbon::create($nextYear, $resetMonth, 1)->endOfMonth()->day;
-      $targetDay = min($resetDay, $lastDayOfMonth);
-      $nextYearTarget = Carbon::create($nextYear, $resetMonth, $targetDay)->setTime(...$resetTime);
-    }
-    
-    return $nextYearTarget;
+    $anniversary = static function (int $year) use ($expiredAt): Carbon {
+      $month = $expiredAt->copy()->setDate($year, $expiredAt->month, 1);
+      return $month->day(min($expiredAt->day, $month->daysInMonth))->setTimeFrom($expiredAt);
+    };
+    $candidate = $anniversary($from->year);
+    return $candidate->gt($from) ? $candidate : $anniversary($from->year + 1);
   }
 
 

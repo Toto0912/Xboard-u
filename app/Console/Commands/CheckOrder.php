@@ -43,8 +43,14 @@ class CheckOrder extends Command
      */
     public function handle()
     {
-        Order::whereIn('status', [Order::STATUS_PENDING, Order::STATUS_PROCESSING])
-            ->orderBy('created_at', 'ASC')
+        $expireBefore = time() - 3600 * 2;
+        Order::where(function ($query) use ($expireBefore) {
+            $query->where('status', Order::STATUS_PROCESSING)
+                ->orWhere(function ($q) use ($expireBefore) {
+                    $q->where('status', Order::STATUS_PENDING)
+                        ->where('created_at', '<=', $expireBefore);
+                });
+        })
             ->lazyById(200)
             ->each(function ($order) {
                 OrderHandleJob::dispatch($order->trade_no);

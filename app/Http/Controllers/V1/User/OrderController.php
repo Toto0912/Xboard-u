@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\User\OrderSave;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
+use App\Models\OrderPaymentAttempt;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\User;
@@ -73,10 +74,6 @@ class OrderController extends Controller
         }
 
         $plan = Plan::findOrFail($request->input('plan_id'));
-        $planService = new PlanService($plan);
-
-        $planService->validatePurchase($user, $request->input('period'));
-
         $order = OrderService::createFromRequest(
             $user,
             $plan,
@@ -119,18 +116,32 @@ class OrderController extends Controller
     {
         $tradeNo = $request->input('trade_no');
         $method = $request->input('method');
-        $order = Order::where('trade_no', $tradeNo)
-            ->where('user_id', $request->user()->id)
-            ->where('status', 0)
-            ->first();
-        if (!$order) {
-            return $this->fail([400, __('Order does not exist or has been paid')]);
-        }
-        if ($order->total_amount < 0) {
-            return $this->fail([400, __('Order amount is invalid')]);
-        }
-        // free process
-        if ($order->total_amount <= 0) {
+        [$order, $paymentService, $attempt] = DB::transaction(function () use ($tradeNo, $method, $request) {
+            $order = Order::where('trade_no', $tradeNo)->where('user_id', $request->user()->id)
+                ->where('status', Order::STATUS_PENDING)->lockForUpdate()->first();
+            if (!$order) {
+                throw new ApiException(__('Order does not exist or has been paid'));
+            }
+            if ($order->total_amount < 0) {
+                throw new ApiException(__('Order amount is invalid'));
+            }
+            PlanService::validateCheckoutCapacity($order);
+            if ((int) $order->total_amount === 0) {
+                return [$order, null, null];
+            }
+            $payment = Payment::query()->useWritePdo()->find($method);
+            if (!$payment || !$payment->enable) {
+                throw new ApiException(__('Payment method is not available'));
+            }
+            $paymentService = new PaymentService($payment->payment, $payment->id);
+            $attempt = OrderPaymentAttempt::quote($order, $payment, $paymentService->supportsAttemptReferences(), $paymentService->quoteCurrency());
+            $order->payment_id = $payment->id;
+            $order->handling_amount = $attempt->handling_amount;
+            $order->saveOrFail();
+            return [$order, $paymentService, $attempt];
+        }, 3);
+
+        if ($attempt === null) {
             $orderService = new OrderService($order);
             if (!$orderService->paid($order->trade_no))
                 return $this->fail([400, '支付失败']);
@@ -139,21 +150,11 @@ class OrderController extends Controller
                 'data' => true
             ]);
         }
-        $payment = Payment::find($method);
-        if (!$payment || !$payment->enable) {
-            return $this->fail([400, __('Payment method is not available')]);
-        }
-        $paymentService = new PaymentService($payment->payment, $payment->id);
-        $order->handling_amount = NULL;
-        if ($payment->handling_fee_fixed || $payment->handling_fee_percent) {
-            $order->handling_amount = (int) round(($order->total_amount * ($payment->handling_fee_percent / 100)) + $payment->handling_fee_fixed);
-        }
-        $order->payment_id = $method;
-        if (!$order->save())
-            return $this->fail([400, __('Request failed, please try again later')]);
         $result = $paymentService->pay([
             'trade_no' => $tradeNo,
-            'total_amount' => isset($order->handling_amount) ? ($order->total_amount + $order->handling_amount) : $order->total_amount,
+            'merchant_reference' => $attempt->merchant_reference,
+            'quote_currency' => $attempt->quote_currency,
+            'total_amount' => $attempt->total_amount + (int) $attempt->handling_amount,
             'user_id' => $order->user_id,
             'stripe_token' => $request->input('token')
         ]);
@@ -186,6 +187,7 @@ class OrderController extends Controller
             'handling_fee_percent'
         ])
             ->where('enable', 1)
+            ->whereIn('payment', PaymentService::getAllPaymentMethodNames())
             ->orderBy('sort', 'ASC')
             ->get();
 

@@ -5,6 +5,7 @@ namespace App\WebSocket;
 use App\Models\Server;
 use App\Services\DeviceStateService;
 use App\Services\NodeRegistry;
+use App\Services\Plugin\HookManager;
 use App\Services\ServerService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -59,20 +60,7 @@ class NodeEventHandlers
      */
     public static function handleDeviceRequest(TcpConnection $conn, int $nodeId, array $data = []): void
     {
-        $node = Server::find($nodeId);
-        if (!$node) return;
-
-        $users = ServerService::getAvailableUsers($node);
-        $userIds = $users->pluck('id')->toArray();
-
-        $service = app(DeviceStateService::class);
-        $devices = $service->getUsersDevices($userIds);
-
-        NodeRegistry::send($nodeId, 'sync.devices', [
-            'users' => $devices,
-        ]);
-
-        Log::debug("[WS] Node#{$nodeId} requested devices, sent " . count($devices) . " users");
+        self::pushDeviceStateToNode($nodeId, app(DeviceStateService::class));
     }
 
     /**
@@ -80,18 +68,31 @@ class NodeEventHandlers
      */
     public static function pushDeviceStateToNode(int $nodeId, DeviceStateService $service): void
     {
-        $node = Server::find($nodeId);
-        if (!$node) return;
+        self::pushDeviceStateToNodes([$nodeId], $service);
+    }
 
-        $users = ServerService::getAvailableUsers($node);
-        $userIds = $users->pluck('id')->toArray();
-        $devices = $service->getUsersDevices($userIds);
+    public static function pushDeviceStateToNodes(array $nodeIds, DeviceStateService $service): void
+    {
+        $onlineIds = array_filter($nodeIds, static fn ($id) => NodeRegistry::get((int) $id) !== null);
+        if (!$onlineIds) return;
 
-        NodeRegistry::send($nodeId, 'sync.devices', [
-            'users' => $devices
-        ]);
-
-        Log::debug("[WS] Pushed device state to node#{$nodeId}: " . count($devices) . " users");
+        $nodes = Server::query()->useWritePdo()->findMany($onlineIds);
+        $hasUserHook = HookManager::hasHook('server.users.get');
+        $batches = $nodes->groupBy(static function (Server $node) use ($hasUserHook) {
+            // A user-list filter receives the node and can narrow its authorization.
+            if ($hasUserHook) return $node->id;
+            $groups = $node->group_ids ?? [];
+            sort($groups, SORT_STRING);
+            return serialize($groups);
+        });
+        foreach ($batches as $batch) {
+            $userIds = ServerService::getAvailableUsers($batch->first())->pluck('id')->all();
+            $devices = $service->getUsersDevices($userIds);
+            foreach ($batch as $node) {
+                NodeRegistry::send($node->id, 'sync.devices', ['users' => $devices]);
+                Log::debug("[WS] Pushed device state to node#{$node->id}: " . count($devices) . " users");
+            }
+        }
     }
 
     /**

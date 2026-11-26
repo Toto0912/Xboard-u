@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ServerMachine;
 use App\Models\ServerMachineLoadHistory;
 use App\Services\ServerService;
+use App\Services\TrafficBatchCapability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -29,6 +30,7 @@ class MachineController extends Controller
             ])->values();
 
         return response()->json([
+            'capabilities' => ['traffic_batch_v1' => TrafficBatchCapability::available()],
             'nodes' => $nodes,
             'base_config' => [
                 'push_interval' => (int) admin_setting('server_push_interval', 60),
@@ -124,9 +126,7 @@ class MachineController extends Controller
             'token' => 'required|string',
         ]);
 
-        $machine = ServerMachine::where('id', $request->input('machine_id'))
-            ->where('token', $request->input('token'))
-            ->first();
+        $machine = ServerMachine::findWithToken((int) $request->input('machine_id'), $request->input('token'));
 
         if (!$machine || !$machine->is_active) {
             abort(403, 'Machine not found or disabled');

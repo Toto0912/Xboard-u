@@ -3,9 +3,14 @@
 namespace App\Services;
 
 use App\Models\Plan;
+use App\Models\Order;
 use App\Models\User;
 use App\Exceptions\ApiException;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 
 class PlanService
 {
@@ -28,9 +33,7 @@ class PlanService
             ->where('sell', true)
             ->orderBy('sort')
             ->get()
-            ->filter(function ($plan) {
-                return $this->hasCapacity($plan);
-            });
+            ->filter(fn (Plan $plan) => $this->loadRemainingCapacity($plan) !== 0);
     }
 
     /**
@@ -57,13 +60,43 @@ class PlanService
      */
     public function isPlanAvailableForUser(Plan $plan, User $user): bool
     {
-        // 如果是续费
-        if ($user->plan_id === $plan->id) {
-            return $plan->renew;
+        $renewal = (int) $user->plan_id === $plan->id;
+        if ($renewal ? !$plan->renew : (!$plan->show || !$plan->sell)) {
+            return false;
         }
 
-        // 如果是新购
-        return $plan->show && $plan->sell && $this->hasCapacity($plan);
+        $now = time();
+        return $this->loadRemainingCapacity($plan, $now) !== 0
+            || ($renewal && $this->occupiesSeat($plan, $user, $now));
+    }
+
+    public function purchasePricesForUser(Plan $plan, User $user): ?array
+    {
+        $prices = $plan->prices ?? [];
+        $canReset = self::canPurchaseReset($plan, $user);
+        if ($this->isPlanAvailableForUser($plan, $user)) {
+            return $canReset ? $prices : Arr::except($prices, Plan::PERIOD_RESET_TRAFFIC);
+        }
+        if ($canReset) {
+            $this->loadRemainingCapacity($plan);
+            return Arr::only($prices, Plan::PERIOD_RESET_TRAFFIC);
+        }
+        return null;
+    }
+
+    public static function canPurchaseReset(Plan $plan, User $user): bool
+    {
+        return (int) $user->plan_id === $plan->id
+            && isset($plan->prices[Plan::PERIOD_RESET_TRAFFIC])
+            && app(UserService::class)->isAvailable($user);
+    }
+
+    // Purchase views serialize this count. Order and gift resources do not need an inventory query.
+    private function loadRemainingCapacity(Plan $plan, ?int $now = null): ?int
+    {
+        $remaining = $this->remainingCapacity($plan, null, $now);
+        $plan->setAttribute('remaining_capacity', $remaining)->syncOriginalAttribute('remaining_capacity');
+        return $remaining;
     }
 
     public function validatePurchase(User $user, string $period): void
@@ -85,9 +118,7 @@ class PlanService
             return;
         }
 
-        if ($user->plan_id !== $this->plan->id && !$this->hasCapacity($this->plan)) {
-            throw new ApiException(__('Current product is sold out'));
-        }
+        $this->validateSeat($user, $periodKey);
 
         $this->validatePlanAvailability($user);
     }
@@ -142,14 +173,14 @@ class PlanService
 
     protected function validateResetTrafficPurchase(User $user): void
     {
-        if (!app(UserService::class)->isAvailable($user) || $this->plan->id !== $user->plan_id) {
+        if (!self::canPurchaseReset($this->plan, $user)) {
             throw new ApiException(__('Subscription has expired or no active subscription, unable to purchase Data Reset Package'));
         }
     }
 
     protected function validatePlanAvailability(User $user): void
     {
-        if ((!$this->plan->show && !$this->plan->renew) || (!$this->plan->show && $user->plan_id !== $this->plan->id)) {
+        if ($user->plan_id !== $this->plan->id && (!$this->plan->show || !$this->plan->sell)) {
             throw new ApiException(__('This subscription has been sold out, please choose another subscription'));
         }
 
@@ -162,20 +193,116 @@ class PlanService
         }
     }
 
-    public function hasCapacity(Plan $plan): bool
+    // Limited sales serialize on the plan. Unlimited plans retain shared-lock concurrency.
+    public static function lockForSale(Plan $snapshot): Plan
     {
-        if ($plan->capacity_limit === null) {
+        return self::lockForAllocation($snapshot->id, $snapshot)
+            ?? throw (new ModelNotFoundException())->setModel(Plan::class, [$snapshot->id]);
+    }
+
+    public static function lockForAllocation(int $id, ?Plan $snapshot = null): ?Plan
+    {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            // SQLite ignores FOR UPDATE. Acquire its writer lock before the transaction's first
+            // read so a competing WAL checkout waits instead of upgrading a stale snapshot.
+            DB::table((new Plan())->getTable())->where('id', $id)->whereNotNull('capacity_limit')
+                ->update(['capacity_limit' => DB::raw('capacity_limit')]);
+            return Plan::find($id);
+        }
+        $snapshot ??= Plan::query()->useWritePdo()->find($id);
+        if (!$snapshot) {
+            return null;
+        }
+        if ($snapshot->capacity_limit === null) {
+            $plan = Plan::sharedLock()->find($id);
+            if ($plan?->capacity_limit === null) {
+                return $plan;
+            }
+        }
+        return Plan::lockForUpdate()->find($id);
+    }
+
+    public static function validateCheckoutCapacity(Order $order): void
+    {
+        $plan = Plan::sharedLock()->findOrFail($order->plan_id);
+        if ($plan->capacity_limit === null || self::getPeriodKey($order->period) === Plan::PERIOD_RESET_TRAFFIC) {
+            return;
+        }
+        $user = User::sharedLock()->findOrFail($order->user_id);
+        (new self($plan))->validateSeat($user, $order->period, $order);
+    }
+
+    public function validateSeat(User $user, string $period, ?Order $order = null): void
+    {
+        if (self::getPeriodKey($period) !== Plan::PERIOD_RESET_TRAFFIC && !$this->canHoldSeat($user, $order)) {
+            throw new ApiException(__('Current product is sold out'));
+        }
+    }
+
+    public function canHoldSeat(User $user, ?Order $order = null): bool
+    {
+        $now = time();
+        return $this->occupiesSeat($this->plan, $user, $now) || $this->hasCapacity($this->plan, $order, $now);
+    }
+
+    // The caller holds the plan lock until the grant and user save commit.
+    public function canGrantSeat(User $user): bool
+    {
+        $now = time();
+        if ($this->plan->capacity_limit === null || $this->occupiesSeat($this->plan, $user, $now)) {
             return true;
         }
+        $reservation = $user->exists ? $this->reservations($this->plan)->where('user_id', $user->id)
+            ->orderBy('id')->sharedLock()->first(['id', 'user_id']) : null;
+        return $this->remainingCapacity($this->plan, $reservation, $now, true) !== 0;
+    }
 
-        $activeUserCount = User::where('plan_id', $plan->id)
-            ->where(function ($query) {
-                $query->where('expired_at', '>=', time())
+    private function occupiesSeat(Plan $plan, User $user, int $now): bool
+    {
+        return (int) $user->plan_id === (int) $plan->id && ($user->expired_at === null || $user->expired_at >= $now);
+    }
+
+    public function hasCapacity(Plan $plan, ?Order $order = null, ?int $now = null): bool
+    {
+        return $this->remainingCapacity($plan, $order, $now) !== 0;
+    }
+
+    private function reservations(Plan $plan): Builder
+    {
+        return Order::where('plan_id', $plan->id)
+            ->whereIn('status', [Order::STATUS_PENDING, Order::STATUS_PROCESSING])
+            ->whereNotIn('period', [Plan::PERIOD_RESET_TRAFFIC, 'reset_price']);
+    }
+
+    private function remainingCapacity(Plan $plan, ?Order $order, ?int $now, bool $currentRead = false): ?int
+    {
+        if ($plan->capacity_limit === null) {
+            return null;
+        }
+        if ($plan->capacity_limit <= 0) {
+            return 0;
+        }
+
+        $now ??= time();
+        $active = User::where('plan_id', $plan->id)->select('id')
+            ->where(function ($query) use ($now) {
+                $query->where('expired_at', '>=', $now)
                     ->orWhereNull('expired_at');
-            })
-            ->count();
-
-        return ($plan->capacity_limit - $activeUserCount) > 0;
+            });
+        // An uncompleted subscription order is its owner's reservation. UNION counts renewals once.
+        $reserved = $this->reservations($plan)->select('user_id');
+        if ($order !== null) {
+            // Existing sales can exceed the cap after an upgrade or an administrator lowers it.
+            $reserved->where('id', '<', $order->id)->where('user_id', '!=', $order->user_id);
+        }
+        if (($currentRead || DB::transactionLevel() > 1) && DB::connection()->getDriverName() === 'mysql') {
+            // The caller may already have a repeatable-read snapshot predating the plan lock.
+            // Lock the source rows inside each UNION arm to count current committed reservations.
+            $active->sharedLock();
+            $reserved->sharedLock();
+        }
+        $occupied = DB::query()->fromSub($active->union($reserved), 'occupied')->count();
+        return max(0, $plan->capacity_limit - $occupied);
     }
 
     public function getAvailablePeriods(Plan $plan): array

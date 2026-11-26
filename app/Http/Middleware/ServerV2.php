@@ -64,9 +64,7 @@ class ServerV2
             'node_id' => $isHandshake ? 'nullable|integer' : 'required|integer',
         ]);
 
-        $machine = ServerMachine::where('id', $request->input('machine_id'))
-            ->where('token', $request->input('token'))
-            ->first();
+        $machine = ServerMachine::findWithToken((int) $request->input('machine_id'), $request->input('token'));
 
         if (!$machine) {
             throw new ApiException('Machine not found or invalid token', 401);
@@ -78,7 +76,7 @@ class ServerV2
 
         $nodeId = (int) $request->input('node_id');
         if ($nodeId > 0) {
-            $serverInfo = ServerModel::where('id', $nodeId)
+            $serverInfo = ServerModel::query()->useWritePdo()->where('id', $nodeId)
                 ->where('machine_id', $machine->id)
                 ->where('enabled', true)
                 ->first();

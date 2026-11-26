@@ -10,6 +10,7 @@ use App\Models\GiftCardUsage;
 use App\Models\Plan;
 use App\Models\TrafficResetLog;
 use App\Models\User;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -93,6 +94,17 @@ class GiftCardService
             ];
         }
 
+        $configured = $this->template->rewards ?? [];
+        if ($this->template->type !== GiftCardTemplate::TYPE_MYSTERY && !isset($configured['plan_id'])) {
+            $rewards = $this->applicableRewards($configured);
+            if ($rewards !== $configured && !array_filter(
+                Arr::only($rewards, ['balance', 'transfer_enable', 'device_limit', 'expire_days', 'reset_package']),
+                static fn ($amount) => $amount > 0
+            )) {
+                return ['can_redeem' => false, 'reason' => '当前权益已无限制，无法使用此礼品卡'];
+            }
+        }
+
         return ['can_redeem' => true, 'reason' => null];
     }
 
@@ -106,6 +118,11 @@ class GiftCardService
         }
 
         return DB::transaction(function () use ($options) {
+            if (DB::getDriverName() === 'sqlite') {
+                // Acquire the writer before reading eligibility or drawing a reward.
+                DB::table($this->code->getTable())->where('id', $this->code->id)
+                    ->update(['usage_count' => DB::raw('usage_count')]);
+            }
             $this->code = GiftCardCode::whereKey($this->code->id)
                 ->lockForUpdate()
                 ->first()
@@ -116,6 +133,13 @@ class GiftCardService
                 ->first()
                 ?? throw new ApiException('该礼品卡类型不存在');
 
+            $actualRewards = $this->template->calculateActualRewards($this->user);
+            $extendsCurrent = !isset($actualRewards['plan_id']) && ($actualRewards['expire_days'] ?? 0) > 0;
+            $planId = $extendsCurrent
+                ? User::query()->useWritePdo()->whereKey($this->user->id)->value('plan_id')
+                : ($actualRewards['plan_id'] ?? null);
+            // Match checkout's plan-before-user lock order, including grants that reactivate an expired plan.
+            $grantPlan = $planId !== null ? PlanService::lockForAllocation($planId) : null;
             $this->user = User::whereKey($this->user->id)
                 ->lockForUpdate()
                 ->first()
@@ -123,13 +147,23 @@ class GiftCardService
 
             $this->validate();
 
-            $actualRewards = $this->template->calculateActualRewards($this->user);
+            if ($extendsCurrent && (int) $this->user->plan_id !== (int) $planId) {
+                throw new ApiException('用户套餐已变更，请重新兑换', 409);
+            }
+            if ($planId !== null && !$grantPlan) {
+                throw new ApiException('套餐不存在');
+            }
+            if ($grantPlan && !(new PlanService($grantPlan))->canGrantSeat($this->user)) {
+                throw new ApiException(__('Current product is sold out'));
+            }
 
+            $actualRewards = $this->applicableRewards($actualRewards, $grantPlan);
             if ($this->template->type === GiftCardTemplate::TYPE_MYSTERY) {
+                unset($actualRewards['random_rewards']);
                 $this->code->setActualRewards($actualRewards);
             }
 
-            $this->giveRewards($actualRewards);
+            $this->giveRewards($actualRewards, $grantPlan);
 
             $inviteRewards = null;
             if ($this->user->invite_user_id && isset($actualRewards['invite_reward_rate'])) {
@@ -154,13 +188,13 @@ class GiftCardService
                 'code' => $this->code->code,
                 'template_name' => $this->template->name,
             ];
-        });
+        }, 3);
     }
 
     /**
      * 发放奖励
      */
-    protected function giveRewards(array $rewards): void
+    protected function giveRewards(array $rewards, ?Plan $grantPlan): void
     {
         $userService = app(UserService::class);
 
@@ -170,39 +204,34 @@ class GiftCardService
             }
         }
 
-        if (isset($rewards['transfer_enable']) && $rewards['transfer_enable'] > 0) {
-            $this->user->transfer_enable = ($this->user->transfer_enable ?? 0) + $rewards['transfer_enable'];
+        if (!isset($rewards['plan_id'])) {
+            // Existing reset hooks observe the extra quota on standalone top-ups.
+            $this->addQuotaRewards($rewards);
         }
 
-        if (isset($rewards['device_limit']) && $rewards['device_limit'] > 0) {
-            $this->user->device_limit = ($this->user->device_limit ?? 0) + $rewards['device_limit'];
+        if (!empty($rewards['reset_package']) && $this->user->plan_id
+            && !app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_GIFT_CARD)) {
+            throw new ApiException('流量重置失败');
         }
-
-        if (isset($rewards['reset_package']) && $rewards['reset_package']) {
-            if ($this->user->plan_id) {
-                app(TrafficResetService::class)->performReset($this->user, TrafficResetLog::SOURCE_GIFT_CARD);
-            }
-        }
-
         if (isset($rewards['plan_id'])) {
-            $plan = Plan::find($rewards['plan_id']);
-            if ($plan) {
-                $userService->assignPlan(
-                    $this->user,
-                    $plan,
-                    $rewards['plan_validity_days'] ?? 0
-                );
-            }
-        } else {
-            // 只有在不是套餐卡的情况下，才处理独立的有效期奖励
-            if (isset($rewards['expire_days']) && $rewards['expire_days'] > 0) {
-                $userService->extendSubscription($this->user, $rewards['expire_days']);
-            }
+            $userService->assignPlan($this->user, $grantPlan, $rewards['plan_validity_days'] ?? 0);
+            $this->addQuotaRewards($rewards);
+        } elseif (($rewards['expire_days'] ?? 0) > 0) {
+            $userService->extendSubscription($this->user, $rewards['expire_days']);
         }
 
-        // 保存用户更改
         if (!$this->user->save()) {
             throw new ApiException('用户信息更新失败');
+        }
+    }
+
+    private function addQuotaRewards(array $rewards): void
+    {
+        if (($rewards['transfer_enable'] ?? 0) > 0) {
+            $this->user->transfer_enable += $rewards['transfer_enable'];
+        }
+        if (($rewards['device_limit'] ?? 0) > 0) {
+            $this->user->device_limit += $rewards['device_limit'];
         }
     }
 
@@ -316,7 +345,27 @@ class GiftCardService
             throw new ApiException('未设置使用用户');
         }
 
-        return $this->template->calculateActualRewards($this->user);
+        return $this->applicableRewards($this->template->calculateActualRewards($this->user));
+    }
+
+    private function applicableRewards(array $rewards, ?Plan $grantPlan = null): array
+    {
+        $deviceLimit = $this->user->device_limit;
+        if (isset($rewards['plan_id'])) {
+            // The grant uses plan_validity_days and the new plan's base device limit.
+            unset($rewards['expire_days']);
+            if (isset($rewards['device_limit'])) {
+                $grantPlan ??= Plan::find($rewards['plan_id']);
+                $deviceLimit = $grantPlan?->device_limit;
+            }
+        } elseif ($this->user->plan_id !== null && $this->user->expired_at === null) {
+            unset($rewards['expire_days']);
+        }
+        if ((isset($rewards['plan_id']) || $this->user->plan_id !== null || $this->user->transfer_enable > 0)
+            && (int) $deviceLimit <= 0) {
+            unset($rewards['device_limit']);
+        }
+        return $rewards;
     }
 
     /**

@@ -85,6 +85,7 @@ export default function PlanPage() {
           {filteredPlans.map((plan) => {
             const lowest = getLowestPrice(plan);
             const soldOut =
+              plan.remaining_capacity === 0 ||
               typeof plan.capacity_limit === 'string' ||
               (typeof plan.capacity_limit === 'number' && plan.capacity_limit <= 0);
             return (
@@ -121,9 +122,9 @@ export default function PlanPage() {
                       <Badge variant="outline">
                         {plan.speed_limit ? `${plan.speed_limit} Mbps` : t('common.unlimited')}
                       </Badge>
-                      {typeof plan.capacity_limit === 'number' && plan.capacity_limit > 0 && (
+                      {typeof plan.remaining_capacity === 'number' && plan.remaining_capacity > 0 && (
                         <Badge variant="outline">
-                          {t('plan.remainingCapacity', { count: plan.capacity_limit })}
+                          {t('plan.remainingCapacity', { count: plan.remaining_capacity })}
                         </Badge>
                       )}
                     </div>

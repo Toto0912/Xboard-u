@@ -28,7 +28,7 @@ class FallbackConfigTest extends TestCase
         $this->admin = User::create([
             'uuid' => '7f894d8b-0d1c-4612-a901-b1475c06f513', 'token' => str_repeat('b', 32),
             'email' => 'fallback-admin@example.test', 'password' => bcrypt('local-test'), 'is_admin' => true,
-            'u' => 0, 'd' => 0, 'transfer_enable' => 1073741824,
+            'u' => 0, 'd' => 0, 'transfer_enable' => 1073741824, 'expired_at' => null,
         ]);
         Sanctum::actingAs($this->admin);
         admin_setting(['server_ws_enable' => 0, 'server_token' => 'local-server-token']);

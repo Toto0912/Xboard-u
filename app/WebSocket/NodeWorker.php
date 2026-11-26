@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Models\ServerMachine;
 use App\Services\DeviceStateService;
 use App\Services\NodeRegistry;
+use App\Services\NodeSyncService;
 use App\Services\ServerService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -80,6 +81,7 @@ class NodeWorker
         });
 
         Timer::add(self::PING_INTERVAL, function () {
+            $this->revalidateMachineSessions();
             $seen = [];
 
             foreach (NodeRegistry::getConnectedNodeIds() as $nodeId) {
@@ -111,13 +113,7 @@ class NodeWorker
                 return;
             }
 
-            $service = app(DeviceStateService::class);
-            foreach ($pendingNodeIds as $nodeId) {
-                $nodeId = (int) $nodeId;
-                if (NodeRegistry::get($nodeId) !== null) {
-                    NodeEventHandlers::pushDeviceStateToNode($nodeId, $service);
-                }
-            }
+            NodeEventHandlers::pushDeviceStateToNodes($pendingNodeIds, app(DeviceStateService::class));
         });
     }
 
@@ -209,14 +205,12 @@ class NodeWorker
         $machineId = (int) ($params['machine_id'] ?? 0);
         $token = $params['token'] ?? '';
 
-        $machine = ServerMachine::where('id', $machineId)
-            ->where('token', $token)
-            ->first();
+        $machine = is_string($token) ? ServerMachine::findWithToken($machineId, $token) : null;
 
         if (!$machine || !$machine->is_active) {
             $conn->close(json_encode([
                 'event' => 'error',
-                'data' => ['message' => 'invalid machine credentials'],
+                'data' => ['code' => 403, 'message' => 'invalid machine credentials'],
             ]));
             return;
         }
@@ -224,21 +218,28 @@ class NodeWorker
         $nodes = ServerService::getMachineNodes($machine);
 
         $machine->forceFill(['last_seen_at' => now()->timestamp])->saveQuietly();
+        $conn->machineId = $machineId;
+        $nodeIds = $nodes->pluck('id')->all();
+        $conn->machineNodeIds = $nodeIds;
+        $conn->machineTokenHash = hash('sha256', $machine->token);
+        $previous = NodeRegistry::getMachine($machineId);
+        if ($previous) {
+            if (($previous->machineTokenHash ?? null) === $conn->machineTokenHash) {
+                $this->detachMachine($previous);
+                $previous->close();
+            } else {
+                $this->revokeMachine($previous);
+            }
+        }
         NodeRegistry::addMachine($machineId, $conn);
 
         // 把同一个连接注册到该机器下所有节点
-        $nodeIds = [];
         $deviceService = app(DeviceStateService::class);
         foreach ($nodes as $node) {
             NodeRegistry::add($node->id, $conn);
             Cache::put("node_ws_alive:{$node->id}", true, 86400);
             $deviceService->clearAllNodeDevices($node->id);
-            $nodeIds[] = $node->id;
         }
-
-        // 连接上记录所属机器和节点列表
-        $conn->machineId = $machineId;
-        $conn->machineNodeIds = $nodeIds;
 
         Log::debug("[WS] Machine#{$machineId} connected, nodes: " . implode(',', $nodeIds), [
             'remote' => $conn->getRemoteIp(),
@@ -270,7 +271,10 @@ class NodeWorker
         $event = $msg['event'] ?? '';
 
         // 机器连接：从消息中读取 node_id 来分派到具体节点
-        if (!empty($conn->machineNodeIds)) {
+        if (!empty($conn->machineId)) {
+            if (NodeRegistry::getMachine($conn->machineId) !== $conn) {
+                return;
+            }
             if ($event === 'pong') {
                 foreach ($conn->machineNodeIds as $nid) {
                     Cache::put("node_ws_alive:{$nid}", true, 86400);
@@ -299,25 +303,10 @@ class NodeWorker
 
     public function onClose(TcpConnection $conn): void
     {
-        $service = app(DeviceStateService::class);
-
         // 机器模式：清理所有关联节点
-        if (!empty($conn->machineNodeIds)) {
-            $machineId = $conn->machineId ?? 'unknown';
-            foreach ($conn->machineNodeIds as $nodeId) {
-                if (NodeRegistry::get($nodeId) !== $conn) continue;
-                NodeRegistry::remove($nodeId, $conn);
-                Cache::forget("node_ws_alive:{$nodeId}");
-
-                $affectedUserIds = $service->clearAllNodeDevices($nodeId);
-            }
-
-            if (!empty($conn->machineId)) {
-                NodeRegistry::removeMachine((int) $conn->machineId, $conn);
-            }
-
-            Log::debug("[WS] Machine#{$machineId} disconnected", [
-                'nodes' => $conn->machineNodeIds,
+        if (!empty($conn->machineId)) {
+            $this->detachMachine($conn);
+            Log::debug("[WS] Machine#{$conn->machineId} disconnected", [
                 'total' => NodeRegistry::count(),
                 'machines' => NodeRegistry::machineCount(),
             ]);
@@ -331,12 +320,59 @@ class NodeWorker
             NodeRegistry::remove($nodeId, $conn);
             Cache::forget("node_ws_alive:{$nodeId}");
 
-            $affectedUserIds = $service->clearAllNodeDevices($nodeId);
+            $affectedUserIds = app(DeviceStateService::class)->clearAllNodeDevices($nodeId);
 
             Log::debug("[WS] Node#{$nodeId} disconnected", [
                 'total' => NodeRegistry::count(),
                 'affected_users' => count($affectedUserIds),
             ]);
+        }
+    }
+
+    private function detachMachine(TcpConnection $conn): void
+    {
+        NodeRegistry::removeMachine($conn->machineId, $conn);
+        $nodeIds = $conn->machineNodeIds ?? [];
+        $conn->machineNodeIds = [];
+        foreach ($nodeIds as $nodeId) {
+            if (NodeRegistry::get($nodeId) !== $conn) {
+                continue;
+            }
+            NodeRegistry::remove($nodeId, $conn);
+            try {
+                Cache::forget("node_ws_alive:{$nodeId}");
+                app(DeviceStateService::class)->clearAllNodeDevices($nodeId);
+            } catch (\Throwable $e) {
+                Log::warning("[WS] Failed to clear offline state for node#{$nodeId}", ['exception' => $e]);
+            }
+        }
+    }
+
+    private function revokeMachine(TcpConnection $conn): void
+    {
+        $this->detachMachine($conn);
+        // Older clients already understand an empty assignment.
+        $conn->send(json_encode(['event' => 'sync.nodes', 'data' => ['nodes' => []]]));
+        $conn->close(json_encode(['event' => 'machine.revoked', 'data' => ['code' => 403]]));
+    }
+
+    public function revalidateMachineSessions(?array $machineIds = null): void
+    {
+        foreach (array_chunk($machineIds ?? NodeRegistry::getConnectedMachineIds(), 500) as $ids) {
+            try {
+                $tokens = ServerMachine::query()->useWritePdo()->whereIntegerInRaw('id', $ids)
+                    ->where('is_active', true)->pluck('token', 'id');
+            } catch (\Illuminate\Database\QueryException $e) {
+                Log::warning('[WS] Machine credential check deferred', ['exception' => $e]);
+                continue;
+            }
+            foreach ($ids as $id) {
+                $conn = NodeRegistry::getMachine($id);
+                $token = $tokens->get($id);
+                if ($conn && ($token === null || hash('sha256', $token) !== $conn->machineTokenHash)) {
+                    $this->revokeMachine($conn);
+                }
+            }
         }
     }
 
@@ -373,6 +409,12 @@ class NodeWorker
             // Machine-level events (e.g., sync.nodes)
             $machineId = $payload['machine_id'] ?? null;
             if ($machineId && $event) {
+                if ($event === NodeSyncService::MACHINE_AUTH_CHANGED) {
+                    if (NodeRegistry::getMachine((int) $machineId)) {
+                        $this->revalidateMachineSessions([(int) $machineId]);
+                    }
+                    return;
+                }
                 // Update server-side registry when node membership changes
                 if ($event === 'sync.nodes') {
                     $nodeIds = array_map('intval', array_column($data['nodes'] ?? [], 'id'));

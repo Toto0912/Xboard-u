@@ -3,9 +3,9 @@
 namespace Plugin\Epay;
 
 use App\Services\Plugin\AbstractPlugin;
-use App\Contracts\PaymentInterface;
+use App\Contracts\PaymentAttemptInterface;
 
-class Plugin extends AbstractPlugin implements PaymentInterface
+class Plugin extends AbstractPlugin implements PaymentAttemptInterface
 {
     public function boot(): void
     {
@@ -112,7 +112,9 @@ class Plugin extends AbstractPlugin implements PaymentInterface
 
         return [
             'trade_no' => $params['out_trade_no'],
-            'callback_no' => $params['trade_no']
+            'callback_no' => $params['trade_no'],
+            'transaction_no' => $params['trade_no'],
+            'verified_order_gross' => $params['money'] ?? null,
         ];
     }
 }

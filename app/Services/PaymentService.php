@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Contracts\PaymentAttemptInterface;
+use App\Contracts\PaymentQuoteCurrencyInterface;
 use App\Exceptions\ApiException;
 use App\Models\Payment;
 use App\Services\Plugin\PluginManager;
@@ -32,7 +34,7 @@ class PaymentService
             $payment = $paymentModel->makeVisible('config')->toArray();
         }
         if ($uuid) {
-            $paymentModel = Payment::where('uuid', $uuid)->first();
+            $paymentModel = Payment::query()->useWritePdo()->where('uuid', $uuid)->first();
             if (!$paymentModel) {
                 throw new ApiException('payment not found');
             }
@@ -74,9 +76,27 @@ class PaymentService
         if ($this->configuredMethod !== $this->method) {
             throw new ApiException('payment method mismatch');
         }
-        if (!$this->config['enable'])
-            throw new ApiException('gate is not enable');
         return $this->payment->notify($params);
+    }
+
+    public function isEnabled(): bool
+    {
+        return (bool) $this->config['enable'];
+    }
+
+    public function paymentId(): int
+    {
+        return $this->config['id'];
+    }
+
+    public function supportsAttemptReferences(): bool
+    {
+        return $this->payment instanceof PaymentAttemptInterface;
+    }
+
+    public function quoteCurrency(): ?string
+    {
+        return $this->payment instanceof PaymentQuoteCurrencyInterface ? $this->payment->quoteCurrency() : null;
     }
 
     public function pay($order)
@@ -88,14 +108,19 @@ class PaymentService
             $notifyUrl = $this->config['notify_domain'] . $parseUrl['path'];
         }
 
-        return $this->payment->pay([
+        $payload = [
             'notify_url' => $notifyUrl,
             'return_url' => source_base_url('/#/order/' . $order['trade_no']),
-            'trade_no' => $order['trade_no'],
+            'trade_no' => $order['merchant_reference'] ?? $order['trade_no'],
+            'order_trade_no' => $order['trade_no'],
             'total_amount' => $order['total_amount'],
             'user_id' => $order['user_id'],
             'stripe_token' => $order['stripe_token']
-        ]);
+        ];
+        if (isset($order['quote_currency'])) {
+            $payload['quote_currency'] = $order['quote_currency'];
+        }
+        return $this->payment->pay($payload);
     }
 
     public function form()

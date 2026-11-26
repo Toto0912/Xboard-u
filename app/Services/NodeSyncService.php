@@ -2,15 +2,25 @@
 
 namespace App\Services;
 
+use App\Jobs\RefreshNodeUsersJob;
 use App\Models\Server;
 use App\Models\ServerMachine;
 use App\Models\User;
+use App\Services\Plugin\HookManager;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
 class NodeSyncService
 {
+    public const MACHINE_AUTH_CHANGED = 'machine.auth.changed';
+
+    public static function notifyMachineCredentialsChanged(int $machineId): void
+    {
+        DB::afterCommit(fn () => self::pushMachine($machineId, self::MACHINE_AUTH_CHANGED, []));
+    }
+
     /**
      * Check if node has active WS connection
      */
@@ -37,18 +47,35 @@ class NodeSyncService
     /**
      * Push all users to all nodes in the group
      */
-    public static function notifyUsersUpdatedByGroup(int $groupId): void
+    public static function notifyUsersUpdatedByGroup(int $groupId): int
     {
-        $servers = Server::whereJsonContains('group_ids', (string) $groupId)
-            ->get();
+        $servers = Server::whereInGroup($groupId)->useWritePdo()->get();
 
+        $notified = 0;
         foreach ($servers as $server) {
-            if (!self::isNodeOnline($server->id))
-                continue;
-
-            $users = ServerService::getAvailableUsers($server)->toArray();
-            self::push($server->id, 'sync.users', ['users' => $users]);
+            if (self::pushNodeUsers($server)) $notified++;
         }
+        return $notified;
+    }
+
+    public static function queueRosterRefreshes(array $groupIds): void
+    {
+        $queued = [];
+        foreach ($groupIds as $groupId) {
+            foreach (Server::whereInGroup($groupId)->useWritePdo()->pluck('id') as $nodeId) {
+                if (!isset($queued[$nodeId])) {
+                    $queued[$nodeId] = true;
+                    RefreshNodeUsersJob::dispatch((int) $nodeId);
+                }
+            }
+        }
+    }
+
+    public static function pushNodeUsers(Server $server): bool
+    {
+        if (!self::isNodeOnline($server->id)) return false;
+        self::push($server->id, 'sync.users', ['users' => ServerService::getAvailableUsers($server)->all()]);
+        return true;
     }
 
     /**
@@ -59,7 +86,13 @@ class NodeSyncService
         if (!$user->group_id)
             return;
 
-        $servers = Server::whereJsonContains('group_ids', (string) $user->group_id)->get();
+        // Filters receive the entire roster and can make different decisions for each node.
+        if (HookManager::hasHook('server.users.get')) {
+            self::notifyUsersUpdatedByGroup($user->group_id);
+            return;
+        }
+
+        $servers = Server::whereInGroup($user->group_id)->useWritePdo()->get();
         foreach ($servers as $server) {
             if (!self::isNodeOnline($server->id))
                 continue;
@@ -86,22 +119,47 @@ class NodeSyncService
     }
 
     /**
+     * Push removal for multiple users from a specific group's online nodes.
+     */
+    public static function notifyUsersRemovedFromGroup(array $userIds, int $groupId): int
+    {
+        $normalizedIds = array_values(array_unique(array_filter(
+            array_map('intval', $userIds),
+            fn (int $id): bool => $id > 0
+        )));
+        if ($normalizedIds === [] || $groupId <= 0) {
+            return 0;
+        }
+        if (HookManager::hasHook('server.users.get')) {
+            return self::notifyUsersUpdatedByGroup($groupId);
+        }
+
+        $servers = Server::whereInGroup($groupId)->useWritePdo()->get();
+        $notifiedNodes = 0;
+
+        foreach ($servers as $server) {
+            if (!self::isNodeOnline($server->id)) {
+                continue;
+            }
+
+            foreach (array_chunk($normalizedIds, 500) as $chunk) {
+                self::push($server->id, 'sync.user.delta', [
+                    'action' => 'remove',
+                    'users' => array_map(fn (int $id): array => ['id' => $id], $chunk),
+                ]);
+            }
+            $notifiedNodes++;
+        }
+
+        return $notifiedNodes;
+    }
+
+    /**
      * Push user removal from a specific group's nodes
      */
     public static function notifyUserRemovedFromGroup(int $userId, int $groupId): void
     {
-        $servers = Server::whereJsonContains('group_ids', (string) $groupId)
-            ->get();
-
-        foreach ($servers as $server) {
-            if (!self::isNodeOnline($server->id))
-                continue;
-
-            self::push($server->id, 'sync.user.delta', [
-                'action' => 'remove',
-                'users' => [['id' => $userId]],
-            ]);
-        }
+        self::notifyUsersRemovedFromGroup([$userId], $groupId);
     }
 
     /**
@@ -112,7 +170,7 @@ class NodeSyncService
         if (!self::isNodeOnline($nodeId))
             return;
 
-        $node = Server::find($nodeId);
+        $node = Server::query()->useWritePdo()->find($nodeId);
         if (!$node)
             return;
 
@@ -128,7 +186,7 @@ class NodeSyncService
      */
     public static function notifyMachineNodesChanged(int $machineId): void
     {
-        $machine = ServerMachine::find($machineId);
+        $machine = ServerMachine::query()->useWritePdo()->find($machineId);
 
         $nodeList = [];
         if ($machine) {

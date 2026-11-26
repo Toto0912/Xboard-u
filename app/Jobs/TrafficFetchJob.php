@@ -2,7 +2,6 @@
 
 namespace App\Jobs;
 
-use App\Models\User;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,15 +32,8 @@ class TrafficFetchJob implements ShouldQueue
 
     public function handle(): void
     {
+        DB::transaction(fn () => TrafficBatch::incrementUsage($this->data, $this->server['rate']), 3);
         $userIds = array_keys($this->data);
-
-        $increments = [];
-        foreach ($this->data as $uid => $v) {
-            $increments[(int) $uid] = [$v[0] * $this->server['rate'], $v[1] * $this->server['rate']];
-        }
-        DB::transaction(fn () => TrafficBatch::increment((new User())->getTable(), $increments,
-            ['t' => time(), 'updated_at' => time()]), 3);
-
         if (!empty($userIds)) {
             Redis::sadd('traffic:pending_check', ...$userIds);
         }

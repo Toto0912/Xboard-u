@@ -185,8 +185,8 @@ return [
         'production' => [
             'data-pipeline' => [
                 'connection' => 'redis',
-                'queue' => ['traffic_fetch', 'stat', 'user_alive_sync'],
-                'balance' => $dataMax >= 3 ? 'auto' : false,
+                'queue' => ['traffic_fetch', 'traffic_batch', 'stat', 'user_alive_sync'],
+                'balance' => $dataMax >= 4 ? 'auto' : false,
                 'autoScalingStrategy' => 'time',
                 'minProcesses' => 1,
                 'maxProcesses' => $dataMax,
@@ -232,6 +232,7 @@ return [
                     'default',
                     'order_handle',
                     'traffic_fetch',
+                    'traffic_batch',
                     'stat',
                     'send_email',
                     'send_email_mass',

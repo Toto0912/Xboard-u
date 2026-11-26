@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\Console\Input\ArgvInput;
 
 class RouteServiceProvider extends ServiceProvider
 {
@@ -34,10 +35,13 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function map()
     {
+        // Image builds and first-time installation run before database-backed route names exist.
+        if ($this->app->runningInConsole()
+            && in_array((new ArgvInput())->getFirstArgument(), ['package:discover', 'storage:link', 'xboard:install'], true)) {
+            return;
+        }
         $this->mapApiRoutes();
         $this->mapWebRoutes();
-
-        //
     }
 
     /**

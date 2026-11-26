@@ -74,6 +74,9 @@ class ManageController extends Controller
     {
         $params = \App\Support\CustomKernelConfig::preserveObjects($request->validated(), $request->getContent());
         $params = \App\Support\Hysteria2PortHopping::normalize($params);
+        if (array_key_exists('group_ids', $params)) {
+            $params['group_ids'] = Server::normalizeGroupIds($params['group_ids']);
+        }
         if (isset($params['cdn_settings']['server'])) {
             $params['cdn_settings']['server']['protocol_settings'] = Server::normalizeProtocolSettings(
                 $params['type'], $params['cdn_settings']['server']['protocol_settings']

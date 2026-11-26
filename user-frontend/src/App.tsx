@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, Suspense, lazy, type ReactNode } from 'react';
+import { useEffect, useState, useSyncExternalStore, Suspense, lazy, type ReactNode } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { UserLayout } from '@/components/layout/UserLayout';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getStoredToken } from '@/lib/storage';
+import { getStoredToken, subscribeToSession } from '@/lib/storage';
 import { applyTheme, useThemeStore } from '@/stores/useThemeStore';
 
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
@@ -24,7 +24,7 @@ const TrafficLogPage = lazy(() => import('@/pages/TrafficLogPage'));
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
 
-const queryClient = new QueryClient({
+const createQueryClient = () => new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
@@ -70,6 +70,12 @@ function ThemeSync() {
 }
 
 export default function App() {
+  const token = useSyncExternalStore(subscribeToSession, getStoredToken);
+  return <SessionApp key={token ?? ''} />;
+}
+
+function SessionApp() {
+  const [queryClient] = useState(createQueryClient);
   const mode = useThemeStore((s) => s.mode);
 
   return (

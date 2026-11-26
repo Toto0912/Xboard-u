@@ -611,13 +611,56 @@ class Server extends Model
         );
     }
 
-    public function getCurrentRate(): float
+    public static function normalizeGroupIds(?array $groupIds): array
+    {
+        if (empty($groupIds)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($groupIds as $id) {
+            if (is_bool($id) || !is_scalar($id)) {
+                continue;
+            }
+            $trimmed = trim((string) $id);
+            if ($trimmed === '' || !ctype_digit($trimmed)) {
+                continue;
+            }
+            $intId = (int) $trimmed;
+            if ($intId <= 0) {
+                continue;
+            }
+            $normalized[] = (string) $intId;
+        }
+
+        return array_values(array_unique($normalized));
+    }
+
+    public function scopeWhereInGroup($query, int|string|null $groupId)
+    {
+        if ($groupId === null || $groupId === '') {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $strId = (string) $groupId;
+        if (ctype_digit($strId)) {
+            $intId = (int) $strId;
+            return $query->where(function ($q) use ($strId, $intId) {
+                $q->whereJsonContains('group_ids', $strId)
+                    ->orWhereJsonContains('group_ids', $intId);
+            });
+        }
+
+        return $query->whereJsonContains('group_ids', $strId);
+    }
+
+    public function getCurrentRate(?\DateTimeInterface $at = null): float
     {
         if (!$this->rate_time_enable) {
             return (float) $this->rate;
         }
 
-        $now = now()->format('H:i');
+        $now = ($at ?? now())->format('H:i');
         $ranges = $this->rate_time_ranges ?? [];
         $matchedRange = collect($ranges)
             ->first(fn($range) => $now >= $range['start'] && $now <= $range['end']);

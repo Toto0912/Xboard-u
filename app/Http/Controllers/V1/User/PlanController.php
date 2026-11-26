@@ -23,12 +23,11 @@ class PlanController extends Controller
         $user = User::find($request->user()->id);
         if ($request->input('id')) {
             $plan = Plan::where('id', $request->input('id'))->first();
-            if (!$plan) {
+            $prices = $plan ? $this->planService->purchasePricesForUser($plan, $user) : null;
+            if ($prices === null) {
                 return $this->fail([400, __('Subscription plan does not exist')]);
             }
-            if (!$this->planService->isPlanAvailableForUser($plan, $user)) {
-                return $this->fail([400, __('Subscription plan does not exist')]);
-            }
+            $plan->prices = $prices;
             return $this->success(PlanResource::make($plan));
         }
 

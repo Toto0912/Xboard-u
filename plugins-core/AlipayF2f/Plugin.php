@@ -3,12 +3,12 @@
 namespace Plugin\AlipayF2f;
 
 use App\Services\Plugin\AbstractPlugin;
-use App\Contracts\PaymentInterface;
+use App\Contracts\PaymentAttemptInterface;
 use App\Exceptions\ApiException;
 use Illuminate\Support\Facades\Log;
 use Plugin\AlipayF2f\library\AlipayF2F;
 
-class Plugin extends AbstractPlugin implements PaymentInterface
+class Plugin extends AbstractPlugin implements PaymentAttemptInterface
 {
     public function boot(): void
     {
@@ -93,7 +93,9 @@ class Plugin extends AbstractPlugin implements PaymentInterface
             if ($gateway->verify($params)) {
                 return [
                     'trade_no' => $params['out_trade_no'],
-                    'callback_no' => $params['trade_no']
+                    'callback_no' => $params['trade_no'],
+                    'transaction_no' => $params['trade_no'],
+                    'verified_order_gross' => $params['total_amount'] ?? null,
                 ];
             } else {
                 return false;

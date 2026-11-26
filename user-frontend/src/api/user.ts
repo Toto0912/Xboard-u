@@ -21,6 +21,7 @@ export interface UserInfo {
 }
 
 export interface UserSubscribe {
+  can_purchase_reset?: boolean;
   plan_id?: number | null;
   token: string;
   expired_at?: number | null;

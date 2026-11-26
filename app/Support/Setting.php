@@ -3,8 +3,10 @@
 namespace App\Support;
 
 use App\Models\Setting as SettingModel;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Contracts\Cache\Repository;
 
 class Setting
@@ -105,28 +107,32 @@ class Setting
             return;
         }
 
+        $read = static fn () => array_change_key_case(
+            SettingModel::query()->useWritePdo()->pluck('value', 'name')->all(), CASE_LOWER
+        );
         try {
-            $settings = $this->cache->rememberForever(self::CACHE_KEY, function (): array {
-                return array_change_key_case(
-                    SettingModel::pluck('value', 'name')->toArray(),
-                    CASE_LOWER
-                );
-            });
-            
-            // 处理JSON格式的值
-            foreach ($settings as $key => $value) {
-                if (is_string($value)) {
-                    $decoded = json_decode($value, true);
-                    if (json_last_error() === JSON_ERROR_NONE) {
-                        $settings[$key] = $decoded;
-                    }
+            $settings = $this->cache->rememberForever(self::CACHE_KEY, $read);
+        } catch (\Throwable) {
+            // The authoritative settings (including the node token) remain available without Redis.
+            try {
+                $settings = $read();
+            } catch (QueryException $error) {
+                if (Schema::hasTable((new SettingModel())->getTable())) {
+                    throw $error;
+                }
+                // The installer can read defaults before running the settings migration.
+                $settings = [];
+            }
+        }
+        foreach ($settings as $key => $value) {
+            if (is_string($value)) {
+                $decoded = json_decode($value, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $settings[$key] = $decoded;
                 }
             }
-            
-            $this->loadedSettings = $settings;
-        } catch (\Throwable) {
-            $this->loadedSettings = [];
         }
+        $this->loadedSettings = $settings;
     }
 
     /**

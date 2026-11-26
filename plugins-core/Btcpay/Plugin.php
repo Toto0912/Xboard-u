@@ -3,10 +3,13 @@
 namespace Plugin\Btcpay;
 
 use App\Services\Plugin\AbstractPlugin;
-use App\Contracts\PaymentInterface;
+use App\Contracts\PaymentQuoteCurrencyInterface;
+use Brick\Math\BigDecimal;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
 use App\Exceptions\ApiException;
 
-class Plugin extends AbstractPlugin implements PaymentInterface
+class Plugin extends AbstractPlugin implements PaymentQuoteCurrencyInterface
 {
     public function boot(): void
     {
@@ -53,98 +56,107 @@ class Plugin extends AbstractPlugin implements PaymentInterface
         ];
     }
 
-    public function pay($order): array
+    public function quoteCurrency(): string
     {
-        $params = [
-            'jsonResponse' => true,
-            'amount' => sprintf('%.2f', $order['total_amount'] / 100),
-            'currency' => 'CNY',
-            'metadata' => [
-                'orderId' => $order['trade_no']
-            ]
-        ];
-
-        $params_string = @json_encode($params);
-        $ret_raw = $this->curlPost($this->getConfig('btcpay_url') . 'api/v1/stores/' . $this->getConfig('btcpay_storeId') . '/invoices', $params_string);
-        $ret = @json_decode($ret_raw, true);
-
-        if (empty($ret['checkoutLink'])) {
-            throw new ApiException("error!");
+        $configured = admin_setting('currency', 'CNY');
+        $currency = is_string($configured) ? strtoupper(trim($configured)) : '';
+        if (!preg_match('/\A[A-Z][A-Z0-9._-]{0,31}\z/', $currency)) {
+            throw new ApiException('Invalid site currency for BTCPay');
         }
-        
-        return [
-            'type' => 1,
-            'data' => $ret['checkoutLink'],
-        ];
+        return $currency;
     }
 
-    public function notify($params): array|bool
+    public function pay($order): array
     {
-        $payload = trim(request()->getContent());
-        $headers = getallheaders();
-        $headerName = 'Btcpay-Sig';
-        $signraturHeader = isset($headers[$headerName]) ? $headers[$headerName] : '';
-        $json_param = json_decode($payload, true);
+        $currency = $order['quote_currency'];
+        $minor = $order['total_amount'];
+        $amount = sprintf('%d.%02d', intdiv($minor, 100), $minor % 100);
+        $response = $this->api()->post($this->invoiceUrl(), [
+            'amount' => $amount,
+            'currency' => $currency,
+            'checkout' => ['paymentTolerance' => 0],
+            'metadata' => ['orderId' => $order['trade_no']],
+        ]);
 
-        $computedSignature = "sha256=" . \hash_hmac('sha256', $payload, $this->getConfig('btcpay_webhook_key'));
+        $invoiceAmount = $response->json('amount');
+        if (!$response->successful() || !is_string($response->json('checkoutLink')) || $response->json('checkoutLink') === ''
+            || $response->json('currency') !== $currency || !$this->isDecimal($invoiceAmount)
+            || !BigDecimal::of($invoiceAmount)->isEqualTo($amount)) {
+            throw new ApiException("BTCPay could not issue the quoted invoice in {$currency}");
+        }
 
-        if (!$this->hashEqual($signraturHeader, $computedSignature)) {
+        return ['type' => 1, 'data' => $response->json('checkoutLink')];
+    }
+
+    public function notify($params): array|string
+    {
+        $payload = request()->getContent();
+        $secret = $this->getConfig('btcpay_webhook_key');
+        if (!is_string($secret) || trim($secret) === '') {
+            throw new ApiException('Missing webhook key', 400);
+        }
+        if (!hash_equals('sha256=' . hash_hmac('sha256', $payload, $secret), (string) request()->header('Btcpay-Sig'))) {
             throw new ApiException('HMAC signature does not match', 400);
         }
 
-        $context = stream_context_create(array(
-            'http' => array(
-                'method' => 'GET',
-                'header' => "Authorization:" . "token " . $this->getConfig('btcpay_api_key') . "\r\n"
-            )
-        ));
+        $id = json_decode($payload, true)['invoiceId'] ?? null;
+        if (!is_string($id) || $id === '' || $id === '.' || $id === '..') {
+            throw new ApiException('Missing BTCPay invoice ID', 400);
+        }
+        $response = $this->api()->get($this->invoiceUrl() . '/' . rawurlencode($id));
+        $invoice = $response->json();
+        if (!$response->successful() || ($invoice['id'] ?? null) !== $id || !isset($invoice['status'])) {
+            throw new ApiException('Unable to verify BTCPay invoice', 503);
+        }
+        if ($invoice['status'] !== 'Settled') {
+            return 'success';
+        }
+        $amount = $invoice['amount'] ?? null;
+        $currency = $invoice['currency'] ?? null;
+        if (!$this->isDecimal($amount) || !is_string($currency) || $currency === '') {
+            throw new ApiException('Missing BTCPay invoice amount or currency', 400);
+        }
 
-        $invoiceDetail = file_get_contents($this->getConfig('btcpay_url') . 'api/v1/stores/' . $this->getConfig('btcpay_storeId') . '/invoices/' . $json_param['invoiceId'], false, $context);
-        $invoiceDetail = json_decode($invoiceDetail, true);
+        // Older Greenfield versions report settlement status but omit paidAmount.
+        $additionalStatus = $invoice['additionalStatus'] ?? null;
+        if (in_array($additionalStatus, ['PaidPartial', 'Invalid'], true)) {
+            throw new ApiException('BTCPay invoice requires settlement review', 400);
+        }
+        $paid = $invoice['paidAmount'] ?? null;
+        if ($paid !== null) {
+            if (!$this->isDecimal($paid) || BigDecimal::of($paid)->isLessThan($amount)) {
+                throw new ApiException('BTCPay payment does not cover the invoice', 400);
+            }
+        } elseif ($additionalStatus !== 'PaidOver') {
+            $tolerance = $invoice['checkout']['paymentTolerance'] ?? null;
+            if (!in_array($additionalStatus, ['None', 'PaidLate'], true) || !is_scalar($tolerance)
+                || !preg_match('/\A0+(?:\.0+)?\z/', (string) $tolerance)) {
+                throw new ApiException('BTCPay invoice requires settlement review', 400);
+            }
+        }
 
-        $out_trade_no = $invoiceDetail['metadata']["orderId"];
-        $pay_trade_no = $json_param['invoiceId'];
-        
         return [
-            'trade_no' => $out_trade_no,
-            'callback_no' => $pay_trade_no
+            'trade_no' => $invoice['metadata']['orderId'] ?? null,
+            'callback_no' => $id,
+            'transaction_no' => $id,
+            'verified_order_gross' => $amount,
+            'verified_order_currency' => $currency,
         ];
     }
 
-    private function curlPost($url, $params = false)
+    private function invoiceUrl(): string
     {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_HEADER, false);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 300);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
-        curl_setopt(
-            $ch,
-            CURLOPT_HTTPHEADER,
-            array('Authorization:' . 'token ' . $this->getConfig('btcpay_api_key'), 'Content-Type: application/json')
-        );
-        $result = curl_exec($ch);
-        curl_close($ch);
-        return $result;
+        return rtrim($this->getConfig('btcpay_url'), '/') . '/api/v1/stores/'
+            . rawurlencode($this->getConfig('btcpay_storeId')) . '/invoices';
     }
 
-    private function hashEqual($str1, $str2)
+    private function api(): PendingRequest
     {
-        if (function_exists('hash_equals')) {
-            return \hash_equals($str1, $str2);
-        }
-
-        if (strlen($str1) != strlen($str2)) {
-            return false;
-        } else {
-            $res = $str1 ^ $str2;
-            $ret = 0;
-
-            for ($i = strlen($res) - 1; $i >= 0; $i--) {
-                $ret |= ord($res[$i]);
-            }
-            return !$ret;
-        }
+        return Http::withToken($this->getConfig('btcpay_api_key'), 'token')->withoutRedirecting();
     }
-} 
+
+    private function isDecimal(mixed $value): bool
+    {
+        return (is_string($value) || is_int($value)) && preg_match('/\A[0-9]+(?:\.[0-9]+)?\z/', (string) $value);
+    }
+}

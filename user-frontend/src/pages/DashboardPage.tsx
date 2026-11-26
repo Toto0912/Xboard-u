@@ -254,7 +254,7 @@ export default function DashboardPage() {
                     <Link2 className="h-3.5 w-3.5" />
                     {t('dashboard.oneClickSubscribe')}
                   </Button>
-                  {sub?.plan?.renew && (
+                  {(sub?.plan?.renew || sub?.can_purchase_reset) && (
                     <Button
                       type="button"
                       size="sm"
@@ -262,7 +262,7 @@ export default function DashboardPage() {
                       onClick={() => navigate(`/plan/${sub.plan_id}`)}
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
-                      {t('dashboard.renewSubscription')}
+                      {t(sub.plan?.renew ? 'dashboard.renewSubscription' : 'plan.periods.reset_price')}
                     </Button>
                   )}
                   <Button

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\V2\Admin;
 
+use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UserGenerate;
 use App\Http\Requests\Admin\UserSendMail;
@@ -245,25 +246,67 @@ class UserController extends Controller
             'id' => 'required|integer|exists:App\\Models\\User,id',
             'invite_user_id' => 'nullable|integer|different:id|exists:App\\Models\\User,id',
         ]);
-        $parent = $data['invite_user_id'] ?? null;
-        $visited = [(int) $data['id']];
-        for ($cursor = $parent; $cursor; $cursor = User::find($cursor)?->invite_user_id) {
-            if (in_array((int) $cursor, $visited, true)) {
-                return $this->fail([422, '邀请关系不能形成循环']);
+        return DB::transaction(function () use ($data) {
+            $user = User::lockForUpdate()->findOrFail($data['id']);
+            $parent = $data['invite_user_id'] ?? null;
+            $this->validateInviter($user, $parent);
+            $user->update(['invite_user_id' => $parent]);
+            return $this->success(true);
+        }, 3);
+    }
+
+    // The caller holds the target row; keep every parent link stable until the change commits.
+    private function validateInviter(User $user, ?int $parent): void
+    {
+        $seen = [$user->id => true];
+        $id = $parent;
+        while ($id !== null) {
+            if (isset($seen[$id])) {
+                throw new ApiException('邀请关系不能形成循环', 422);
             }
-            $visited[] = (int) $cursor;
+            $seen[$id] = true;
+            $ancestor = User::lockForUpdate()->find($id, ['id', 'invite_user_id']);
+            if (!$ancestor && $id === $parent) {
+                throw new ApiException('邀请用户不存在');
+            }
+            $id = $ancestor?->invite_user_id;
         }
-        User::findOrFail($data['id'])->update(['invite_user_id' => $parent]);
-        return $this->success(true);
     }
 
     public function update(UserUpdate $request)
     {
+        try {
+            if ($request->hasAny(['invite_user_email', 'expected_balance', 'expected_commission_balance'])) {
+                return DB::transaction(fn () => $this->updateUser($request, true), 3);
+            }
+            return $this->updateUser($request);
+        } catch (ApiException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error($e);
+            return $this->fail([500, '保存失败']);
+        }
+    }
+
+    private function updateUser(UserUpdate $request, bool $lockUser = false)
+    {
         $params = $request->validated();
 
-        $user = User::find($request->input('id'));
+        $query = User::query()->useWritePdo();
+        if ($lockUser) {
+            $query->lockForUpdate();
+        }
+        $user = $query->find($request->input('id'));
         if (!$user) {
             return $this->fail([400202, '用户不存在']);
+        }
+        foreach (['balance', 'commission_balance'] as $field) {
+            $expected = 'expected_' . $field;
+            if (isset($params[$field], $params[$expected])
+                && (int) round($params[$expected] * 100) !== (int) $user->{$field}) {
+                return $this->fail([409, '余额已发生变化，请重新打开用户资料后再保存']);
+            }
+            unset($params[$expected]);
         }
         if (isset($params['email'])) {
             $existingUser = User::byEmail($params['email'])->first();
@@ -280,31 +323,55 @@ class UserController extends Controller
         }
         // 处理订阅计划
         if (isset($params['plan_id'])) {
-            $plan = Plan::find($params['plan_id']);
+            $plan = Plan::query()->useWritePdo()->find($params['plan_id']);
             if (!$plan) {
                 return $this->fail([400202, '订阅计划不存在']);
             }
             $params['group_id'] = $plan->group_id;
+        } elseif (array_key_exists('plan_id', $params)) {
+            $params['group_id'] = null;
         }
         // 处理邀请用户
-        if ($request->input('invite_user_email') && $inviteUser = User::byEmail($request->input('invite_user_email'))->first()) {
-            $params['invite_user_id'] = $inviteUser->id;
-        } else {
+        if (array_key_exists('invite_user_email', $params)) {
+            $email = $params['invite_user_email'];
+            unset($params['invite_user_email']);
             $params['invite_user_id'] = null;
+            if ($email !== null) {
+                $inviter = User::byEmail($email)->lockForUpdate()->first(['id']);
+                if (!$inviter) {
+                    return $this->fail([400202, '邀请用户不存在']);
+                }
+                $params['invite_user_id'] = $inviter->id;
+            }
         }
 
+        if (isset($params['balance'])) {
+            $params['balance'] = (int) round($params['balance'] * 100);
+        }
+        if (isset($params['commission_balance'])) {
+            $params['commission_balance'] = (int) round($params['commission_balance'] * 100);
+        }
+
+        $params = HookManager::filter('admin.user.update.params', $params, $request, $user);
+        if (!$lockUser && array_key_exists('invite_user_id', $params)) {
+            // A plugin can add an inviter to an otherwise ordinary edit.
+            return DB::transaction(function () use ($user, $params, $request) {
+                $lockedUser = User::lockForUpdate()->findOrFail($user->id);
+                return $this->saveUserUpdate($request, $lockedUser, $params);
+            }, 3);
+        }
+        return $this->saveUserUpdate($request, $user, $params);
+    }
+
+    private function saveUserUpdate(UserUpdate $request, User $user, array $params)
+    {
+        if (array_key_exists('invite_user_id', $params)) {
+            $this->validateInviter($user, $params['invite_user_id']);
+        }
         if (isset($params['banned']) && (int) $params['banned'] === 1) {
             $authService = new AuthService($user);
             $authService->removeAllSessions();
         }
-        if (isset($params['balance'])) {
-            $params['balance'] = $params['balance'] * 100;
-        }
-        if (isset($params['commission_balance'])) {
-            $params['commission_balance'] = $params['commission_balance'] * 100;
-        }
-
-        $params = HookManager::filter('admin.user.update.params', $params, $request, $user);
 
         HookManager::call('admin.user.update.before', [
             'user' => $user,
@@ -312,12 +379,7 @@ class UserController extends Controller
             'request' => $request,
         ]);
 
-        try {
-            $user->update($params);
-        } catch (\Exception $e) {
-            Log::error($e);
-            return $this->fail([500, '保存失败']);
-        }
+        $user->update($params);
 
         HookManager::call('admin.user.update.after', [
             'user' => $user->refresh(),
@@ -438,14 +500,14 @@ class UserController extends Controller
             }
 
             $userService = app(UserService::class);
-            $user = $userService->createUser([
+            $user = $userService->createAndSaveUser([
                 'email' => $email,
                 'password' => $request->input('password') ?? $email,
                 'plan_id' => $request->input('plan_id'),
                 'expired_at' => $request->input('expired_at'),
             ]);
 
-            if (!$user->save()) {
+            if (!$user) {
                 return $this->fail([500, '生成失败']);
             }
             return $this->success(true);
@@ -456,9 +518,20 @@ class UserController extends Controller
         }
     }
 
-    private function multiGenerate(Request $request)
+    private function saveGeneratedUsers(array $usersData): array
     {
         $userService = app(UserService::class);
+        return DB::transaction(function () use ($usersData, $userService) {
+            $users = [];
+            foreach ($usersData as $data) {
+                $users[] = $userService->createAndSaveUser($data) ?? throw new \RuntimeException('生成失败');
+            }
+            return $users;
+        }, 3);
+    }
+
+    private function multiGenerate(Request $request)
+    {
         $usersData = [];
 
         for ($i = 0; $i < $request->input('generate_count'); $i++) {
@@ -474,16 +547,8 @@ class UserController extends Controller
 
 
         try {
-            DB::beginTransaction();
-            $users = [];
-            foreach ($usersData as $userData) {
-                $user = $userService->createUser($userData);
-                $user->save();
-                $users[] = $user;
-            }
-            DB::commit();
+            $users = $this->saveGeneratedUsers($usersData);
         } catch (\Exception $e) {
-            DB::rollBack();
             return $this->fail([500, '生成失败']);
         }
 
@@ -529,7 +594,6 @@ class UserController extends Controller
 
     private function multiGenerateWithPrefix(Request $request)
     {
-        $userService = app(UserService::class);
         $usersData = [];
         $emailPrefix = $request->input('email_prefix');
         $emailSuffix = $request->input('email_suffix');
@@ -555,16 +619,8 @@ class UserController extends Controller
         }
 
         try {
-            DB::beginTransaction();
-            $users = [];
-            foreach ($usersData as $userData) {
-                $user = $userService->createUser($userData);
-                $user->save();
-                $users[] = $user;
-            }
-            DB::commit();
+            $users = $this->saveGeneratedUsers($usersData);
         } catch (\Exception $e) {
-            DB::rollBack();
             return $this->fail([500, '生成失败']);
         }
 
@@ -704,9 +760,12 @@ class UserController extends Controller
             $builder->whereIn('id', $userIds);
         } // all: ignore filter/sort
 
+        $affectedUsers = collect();
+
         try {
-            DB::transaction(function () use ($builder): void {
-                $ids = (clone $builder)->reorder()->lockForUpdate()->pluck('id');
+            DB::transaction(function () use ($builder, &$affectedUsers): void {
+                $affectedUsers = (clone $builder)->reorder()->lockForUpdate()->get(['id', 'group_id']);
+                $ids = $affectedUsers->pluck('id');
                 $builder->update(['banned' => 1]);
                 foreach ($ids->chunk(500) as $chunk) {
                     \Laravel\Sanctum\PersonalAccessToken::where('tokenable_type', (new User())->getMorphClass())
@@ -717,7 +776,14 @@ class UserController extends Controller
             Log::error($e);
             return $this->fail([500, '处理失败']);
         }
-        // Full refresh not implemented.
+
+        foreach ($affectedUsers->groupBy('group_id') as $groupId => $users) {
+            if (!$groupId) {
+                continue;
+            }
+            NodeSyncService::notifyUsersRemovedFromGroup($users->pluck('id')->all(), (int) $groupId);
+        }
+
         return $this->success(true);
     }
 

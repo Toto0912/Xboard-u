@@ -4,7 +4,6 @@ namespace App\Services\Auth;
 
 use App\Exceptions\ApiException;
 use App\Models\InviteCode;
-use App\Models\Plan;
 use App\Models\User;
 use App\Services\CaptchaService;
 use App\Services\Plugin\HookManager;
@@ -15,6 +14,7 @@ use App\Utils\Helper;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class RegisterService
 {
@@ -113,26 +113,50 @@ class RegisterService
      */
     public function handleInviteCode(string $inviteCode): int|null
     {
-        $inviteCodeModel = InviteCode::where('code', $inviteCode)
-            ->where('status', InviteCode::STATUS_UNUSED)
-            ->first();
-
-        if (!$inviteCodeModel) {
-            if ((int) admin_setting('invite_force', 0)) {
-                throw new ApiException(__('Invalid invitation code'));
-            }
-            return null;
+        $invite = $this->findInviteCode($inviteCode);
+        if ($invite && !(int) admin_setting('invite_never_expire', 0)) {
+            $this->claimInviteCode($invite);
         }
-
-        if (!(int) admin_setting('invite_never_expire', 0)) {
-            $inviteCodeModel->status = InviteCode::STATUS_USED;
-            $inviteCodeModel->save();
-        }
-
-        return $inviteCodeModel->user_id;
+        return $invite?->user_id;
     }
 
+    private function findInviteCode(string $inviteCode): ?InviteCode
+    {
+        $invite = InviteCode::where('code', $inviteCode)
+            ->useWritePdo()
+            ->orderBy('id')
+            ->first();
 
+        if ($invite?->status || (!$invite && (int) admin_setting('invite_force', 0))) {
+            throw new ApiException(__('Invalid invitation code'));
+        }
+        return $invite;
+    }
+
+    private function claimInviteCode(InviteCode $invite): void
+    {
+        $claimed = InviteCode::whereKey($invite->id)
+            ->where('status', InviteCode::STATUS_UNUSED)
+            ->update(['status' => InviteCode::STATUS_USED]);
+        if (!$claimed) {
+            throw new ApiException(__('Invalid invitation code'));
+        }
+    }
+
+    private function createInvitedUser(UserService $userService, array $data, string $inviteCode): ?User
+    {
+        $invite = $this->findInviteCode($inviteCode);
+        $data['invite_user_id'] = $invite?->user_id;
+        if (!$invite || (int) admin_setting('invite_never_expire', 0)) {
+            return $userService->createAndSaveUser($data);
+        }
+
+        // Make the guarded update the first statement so SQLite can wait for a competing writer.
+        return DB::transaction(function () use ($userService, $data, $invite) {
+            $this->claimInviteCode($invite);
+            return $userService->createAndSaveUser($data) ?? throw new ApiException(__('Register failed'), 500);
+        }, 3);
+    }
 
     /**
      * 注册用户
@@ -151,26 +175,17 @@ class RegisterService
         HookManager::call('user.register.before', $request);
 
         $email = User::normalizeEmail((string) $request->input('email'));
-        $password = $request->input('password');
         $inviteCode = $request->input('invite_code');
-
-        // 处理邀请码获取邀请人ID
-        $inviteUserId = null;
-        if ($inviteCode) {
-            $inviteUserId = $this->handleInviteCode($inviteCode);
-        }
+        $data = ['email' => $email, 'password' => $request->input('password')];
 
         // 创建用户
         $userService = app(UserService::class);
-        $user = $userService->createUser([
-            'email' => $email,
-            'password' => $password,
-            'invite_user_id' => $inviteUserId,
-        ]);
-
         // The unique index is the final guard against concurrent registrations.
         try {
-            if (!$user->save()) {
+            $user = $inviteCode
+                ? $this->createInvitedUser($userService, $data, $inviteCode)
+                : $userService->createAndSaveUser($data);
+            if (!$user) {
                 return [false, [500, __('Register failed')]];
             }
         } catch (UniqueConstraintViolationException $exception) {

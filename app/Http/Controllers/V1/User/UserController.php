@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Services\Auth\LoginService;
 use App\Services\AuthService;
+use App\Services\PlanService;
 use App\Services\Plugin\HookManager;
 use App\Services\UserService;
 use App\Utils\CacheKey;
@@ -135,6 +136,7 @@ class UserController extends Controller
                 'plan_id',
                 'token',
                 'expired_at',
+                'banned',
                 'u',
                 'd',
                 'transfer_enable',
@@ -148,11 +150,14 @@ class UserController extends Controller
         if (!$user) {
             return $this->fail([400, __('The user does not exist')]);
         }
+        $user->makeHidden('banned');
+        $user['can_purchase_reset'] = false;
         if ($user->plan_id) {
             $user['plan'] = Plan::find($user->plan_id);
             if (!$user['plan']) {
                 return $this->fail([400, __('Subscription plan does not exist')]);
             }
+            $user['can_purchase_reset'] = PlanService::canPurchaseReset($user['plan'], $user);
         }
         $user['subscribe_url'] = Helper::getSubscribeUrl($user['token']);
         $userService = new UserService();

@@ -29,7 +29,10 @@ class ServerHandshakeTest extends TestCase
             'token' => 'server-token',
         ]);
 
-        $response->assertOk()->assertJsonStructure(['websocket' => ['enabled']]);
+        $response->assertOk()->assertJsonStructure([
+            'websocket' => ['enabled'],
+            'settings' => ['push_interval', 'pull_interval'],
+        ]);
     }
 
     public function test_v2_handshake_rejects_invalid_token(): void

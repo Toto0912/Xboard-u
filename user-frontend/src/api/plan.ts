@@ -36,6 +36,7 @@ export interface PlanItem {
   onetime_price?: number | null;
   reset_price?: number | null;
   capacity_limit?: number | string | null;
+  remaining_capacity?: number | null;
   transfer_enable: number;
   speed_limit?: number | null;
   device_limit?: number | null;

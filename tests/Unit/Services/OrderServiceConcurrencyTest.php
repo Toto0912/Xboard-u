@@ -10,8 +10,10 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Services\GiftCardService;
 use App\Services\OrderService;
+use App\Services\Plugin\HookManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class OrderServiceConcurrencyTest extends TestCase
@@ -126,6 +128,51 @@ class OrderServiceConcurrencyTest extends TestCase
         $response->assertStatus(400);
         $this->assertSame(Order::STATUS_PENDING, Order::findOrFail($order->id)->status);
         $this->assertNull(User::findOrFail($user->id)->plan_id);
+    }
+
+    public function test_order_transaction_rechecks_sale_terms_after_initial_validation(): void
+    {
+        $user = $this->makeUser(['balance' => 500]);
+        $plan = $this->makePlan();
+        Sanctum::actingAs($user);
+        HookManager::register('order.create.before', fn () => Plan::whereKey($plan->id)->update(['sell' => false]));
+
+        $this->postJson('/api/v1/user/order/save', ['plan_id' => $plan->id, 'period' => 'month_price'])
+            ->assertStatus(400);
+        $this->assertFalse((bool) $plan->fresh()->sell);
+        $this->assertSame(0, Order::count());
+        $this->assertSame(500, (int) $user->fresh()->balance);
+    }
+
+    public static function stoppedSaleCases(): array
+    {
+        return [
+            'new buyer' => ['none', true, true, false, 'month_price', false],
+            'switch from another plan' => ['other', true, true, false, 'month_price', false],
+            'subscriber renewal' => ['same', true, true, false, 'month_price', true],
+            'expired subscriber on a visible renewable plan' => ['same', true, true, true, 'month_price', true],
+            'expired subscriber on a hidden plan' => ['same', false, true, true, 'month_price', false],
+            'renewals closed' => ['same', true, false, false, 'month_price', false],
+            'active subscriber reset with renewals closed' => ['same', false, false, false, 'reset_price', true],
+            'expired subscriber reset' => ['same', true, true, true, 'reset_price', false],
+        ];
+    }
+
+    #[DataProvider('stoppedSaleCases')]
+    public function test_stopped_sales_keep_renewal_and_reset_rules(
+        string $membership, bool $show, bool $renew, bool $expired, string $period, bool $allowed
+    ): void {
+        $plan = $this->makePlan(['show' => $show, 'sell' => false, 'renew' => $renew,
+            'prices' => [Plan::PERIOD_MONTHLY => 11, Plan::PERIOD_RESET_TRAFFIC => 3]]);
+        $planId = match ($membership) {
+            'same' => $plan->id, 'other' => $this->makePlan()->id, default => null,
+        };
+        $user = $this->makeUser(['plan_id' => $planId, 'expired_at' => time() + ($expired ? -60 : 86400),
+            'transfer_enable' => 1024]);
+        Sanctum::actingAs($user);
+        $this->postJson('/api/v1/user/order/save', ['plan_id' => $plan->id, 'period' => $period])
+            ->assertStatus($allowed ? 200 : 400);
+        $this->assertSame($allowed ? 1 : 0, Order::count());
     }
 
     private function makeUser(array $overrides = []): User

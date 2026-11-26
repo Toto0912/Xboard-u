@@ -141,6 +141,10 @@ export async function rawApiRequest<T = unknown>(
     payload = (await response.json()) as Record<string, unknown>;
   }
 
+  // A response from the previous session must not update data or sign out the new user.
+  if (requiresAuth && token !== getStoredToken()) {
+    throw new DOMException('Session changed', 'AbortError');
+  }
   if (!response.ok) {
     if (requiresAuth && (response.status === 401 || response.status === 403)) {
       redirectToLogin();

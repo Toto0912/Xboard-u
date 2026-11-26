@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Server;
+use App\Utils\CacheKey;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 
 final class ServerTrafficActivity
@@ -32,7 +34,11 @@ final class ServerTrafficActivity
 
     public static function record(Server $server, array $traffic): void
     {
-        $receivedAt = now()->timestamp;
+        self::recordUsers($server->type, $server->id, self::activeUsers($traffic), now()->timestamp);
+    }
+
+    public static function activeUsers(array $traffic): array
+    {
         $users = [];
         foreach ($traffic as $userId => $delta) {
             if (!is_array($delta) || filter_var($userId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
@@ -47,12 +53,33 @@ final class ServerTrafficActivity
             }
         }
 
+        return $users;
+    }
+
+    public static function recordBatch(string $type, int $serverId, array $users, int $receivedAt): void
+    {
+        $remaining = $receivedAt + 3600 - now()->timestamp;
+        if ($remaining > 0) {
+            $key = CacheKey::get('SERVER_' . strtoupper($type) . '_LAST_PUSH_AT', $serverId);
+            Cache::lock($key . ':update', 5)->block(2, function () use ($key, $receivedAt, $remaining) {
+                if ((int) Cache::get($key, 0) < $receivedAt) {
+                    Cache::put($key, $receivedAt, $remaining);
+                }
+            });
+        }
+        if ($receivedAt > now()->timestamp - self::WINDOW_SECONDS) {
+            self::recordUsers($type, $serverId, $users, $receivedAt);
+        }
+    }
+
+    private static function recordUsers(string $type, int $id, array $users, int $receivedAt): void
+    {
         if ($users === []) {
             return;
         }
 
         // Update and expire the snapshot together, without moving a newer observation back in time.
-        Redis::eval(self::RECORD, 1, self::key($server->type, $server->id),
+        Redis::eval(self::RECORD, 1, self::key($type, $id),
             $receivedAt, self::WINDOW_SECONDS, ...$users);
     }
 

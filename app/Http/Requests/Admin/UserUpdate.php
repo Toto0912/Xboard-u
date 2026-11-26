@@ -31,8 +31,11 @@ class UserUpdate extends FormRequest
             'u' => 'integer',
             'd' => 'integer',
             'balance' => 'numeric',
+            'expected_balance' => 'numeric',
             'commission_type' => 'integer',
             'commission_balance' => 'numeric',
+            'expected_commission_balance' => 'numeric',
+            'invite_user_email' => 'nullable|email:strict|max:64',
             'remarks' => 'nullable',
             'speed_limit' => 'nullable|integer',
             'device_limit' => 'nullable|integer'

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ArrowLeft, Check, Loader2, Tag } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -22,18 +22,21 @@ import { formatCurrency } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export default function PlanOrderPage() {
+  const { plan_id } = useParams<{ plan_id: string }>();
+  return plan_id ? <PlanOrderForm key={plan_id} plan_id={plan_id} /> : null;
+}
+
+function PlanOrderForm({ plan_id }: { plan_id: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { plan_id } = useParams<{ plan_id: string }>();
 
-  const [selectedPeriod, setSelectedPeriod] = useState<PlanPeriodKey | ''>('');
+  const [preferredPeriod, setPreferredPeriod] = useState<PlanPeriodKey>();
   const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<CouponCheckResult | null>(null);
+  const [couponQuote, setCouponQuote] = useState<{ period: PlanPeriodKey; coupon: CouponCheckResult } | null>(null);
 
   const planQuery = useQuery({
     queryKey: ['plan-detail', plan_id],
-    queryFn: () => fetchPlanById(plan_id!),
-    enabled: Boolean(plan_id),
+    queryFn: () => fetchPlanById(plan_id),
   });
 
   const commQuery = useQuery({
@@ -49,11 +52,9 @@ export default function PlanOrderPage() {
     return PLAN_PERIOD_KEYS.filter((k) => typeof plan[k] === 'number' && plan[k]! >= 0);
   }, [plan]);
 
-  useEffect(() => {
-    if (availablePeriods.length > 0 && !selectedPeriod) {
-      setSelectedPeriod(availablePeriods[0]);
-    }
-  }, [availablePeriods, selectedPeriod]);
+  const selectedPeriod = preferredPeriod && availablePeriods.includes(preferredPeriod)
+    ? preferredPeriod : availablePeriods[0] ?? '';
+  const appliedCoupon = couponQuote?.period === selectedPeriod ? couponQuote.coupon : null;
 
   const basePrice = selectedPeriod && plan ? Number(plan[selectedPeriod] ?? 0) : 0;
 
@@ -67,14 +68,14 @@ export default function PlanOrderPage() {
   const finalAmount = Math.max(0, basePrice - discountAmount);
 
   const couponMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (period: PlanPeriodKey) =>
       checkCoupon({
         code: couponInput.trim(),
         plan_id: Number(plan_id),
-        period: selectedPeriod,
+        period,
       }),
-    onSuccess: (data) => {
-      setAppliedCoupon(data);
+    onSuccess: (data, period) => {
+      setCouponQuote({ period, coupon: data });
       toast.success(
         t('plan.couponApplied', {
           amount:
@@ -85,7 +86,7 @@ export default function PlanOrderPage() {
       );
     },
     onError: () => {
-      setAppliedCoupon(null);
+      setCouponQuote(null);
     },
   });
 
@@ -146,8 +147,8 @@ export default function PlanOrderPage() {
                       key={key}
                       type="button"
                       onClick={() => {
-                        setSelectedPeriod(key);
-                        setAppliedCoupon(null);
+                        setPreferredPeriod(key);
+                        setCouponQuote(null);
                       }}
                       className={cn(
                         'flex flex-col items-start rounded-xl border p-3 text-left transition-colors cursor-pointer',
@@ -182,14 +183,14 @@ export default function PlanOrderPage() {
                       value={couponInput}
                       onChange={(e) => {
                         setCouponInput(e.target.value);
-                        if (appliedCoupon) setAppliedCoupon(null);
+                        setCouponQuote(null);
                       }}
                     />
                     <Button
                       type="button"
                       variant="outline"
                       disabled={!couponInput.trim() || !selectedPeriod || couponMutation.isPending}
-                      onClick={() => couponMutation.mutate()}
+                      onClick={() => selectedPeriod && couponMutation.mutate(selectedPeriod)}
                     >
                       {couponMutation.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />

@@ -532,10 +532,10 @@ export default function OrderManagePage() {
                               </DropdownMenuItem>
                             </>
                           )}
-                          {order.invite_user_id && (
+                          {order.invite_user_id && order.commission_status !== 2 && (
                             <>
                               <DropdownMenuSeparator />
-                              {[0, 1, 2, 3].map((st) => (
+                              {([3, 4].includes(order.status) ? [0, 1, 3] : [0, 3]).map((st) => (
                                 <DropdownMenuItem
                                   key={st}
                                   onClick={() =>
@@ -545,9 +545,7 @@ export default function OrderManagePage() {
                                     })
                                   }
                                 >
-                                  {t('order.setCommissionTo', {
-                                    status: t(`order.commissions.${st}`),
-                                  })}
+                                  {t('order.setCommissionTo')} · {t(`order.commissions.${st}`)}
                                 </DropdownMenuItem>
                               ))}
                             </>

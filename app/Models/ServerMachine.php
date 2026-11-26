@@ -37,6 +37,12 @@ class ServerMachine extends Model
 
     protected $hidden = ['token'];
 
+    public static function findWithToken(int $id, string $token): ?self
+    {
+        $machine = self::query()->useWritePdo()->find($id);
+        return $machine && $token !== '' && hash_equals($machine->token, $token) ? $machine : null;
+    }
+
     public function servers(): HasMany
     {
         return $this->hasMany(Server::class, 'machine_id');

@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $status
  * @property array|null $surplus_order_ids
  * @property int|null $coupon_id
+ * @property bool $coupon_quota_deducted
  * @property int $created_at
  * @property int $updated_at
  * @property int|null $commission_status
@@ -46,11 +47,13 @@ class Order extends Model
     protected $table = 'v2_order';
     protected $dateFormat = 'U';
     protected $guarded = ['id'];
+    protected $hidden = ['coupon_quota_deducted'];
     protected $casts = [
         'created_at' => 'timestamp',
         'updated_at' => 'timestamp',
         'surplus_order_ids' => 'array',
-        'handling_amount' => 'integer'
+        'handling_amount' => 'integer',
+        'coupon_quota_deducted' => 'boolean',
     ];
 
     const STATUS_PENDING = 0; // 待支付
@@ -58,6 +61,8 @@ class Order extends Model
     const STATUS_CANCELLED = 2; // 已取消
     const STATUS_COMPLETED = 3; // 已完成
     const STATUS_DISCOUNTED = 4; // 已折抵
+
+    const COMMISSION_ELIGIBLE_STATUSES = [self::STATUS_COMPLETED, self::STATUS_DISCOUNTED];
 
     public static $statusMap = [
         self::STATUS_PENDING => '待支付',
