@@ -42,6 +42,8 @@ docker compose up -d
 docker compose pull && docker compose up -d
 ```
 
+旧面板镜像由 Docker 管理，Linux 默认存放在 `/var/lib/docker`（经典存储驱动）或 `/var/lib/containerd`（containerd 镜像存储）。如需清理，可在更新前用 `docker compose images -q xboard` 记下镜像 ID，确认新版运行正常后用 `docker image rm <旧镜像ID>` 删除旧镜像。
+
 ## 📖 安装与迁移
 
 - [使用 aaPanel + Docker 部署（推荐，MySQL）](docs/AAPANEL-MYSQL-UPGRADE.md)
