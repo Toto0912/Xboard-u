@@ -351,13 +351,14 @@ class OrderService
     public function confirmZeroPayment(): void
     {
         $order = $this->order;
-        if ((int) $order->type === Order::TYPE_UPGRADE && $order->surplus_amount > 0
-            && ($order->surplus_basis['mode'] ?? null) !== 'time') {
-            $user = User::lockForUpdate()->findOrFail($order->user_id);
+        if ((int) $order->type === Order::TYPE_UPGRADE && $order->surplus_amount > 0) {
+            $basis = $order->surplus_basis;
+            $timeOnly = ($basis['mode'] ?? null) === 'time';
+            $user = ($timeOnly ? User::sharedLock() : User::lockForUpdate())->findOrFail($order->user_id);
             $ids = $order->surplus_order_ids ?? [];
             $sources = Order::query()->useWritePdo()->where('user_id', $user->id)->where('plan_id', $user->plan_id)
-                ->where('status', Order::STATUS_COMPLETED)->whereIntegerInRaw('id', $ids)->get();
-            $basis = $order->surplus_basis;
+                ->where('status', Order::STATUS_COMPLETED)->whereIntegerInRaw('id', $ids)
+                ->when($timeOnly, fn ($query) => $query->sharedLock())->get();
             if ($basis === null && $user->expired_at === null && $sources->count() === 1
                 && PlanService::getPeriodKey($sources->first()->period) === Plan::PERIOD_ONETIME) {
                 $basis = ['mode' => 'once', 'plan' => $user->plan_id, 'quota' => (int) $user->transfer_enable];
@@ -373,10 +374,11 @@ class OrderService
                         'time_ratio' => $seconds > 0 ? min(1, max(0, $user->expired_at - $at) / $seconds) : 0];
                 }
             }
-            if (!$basis || (int) $basis['plan'] !== (int) $user->plan_id || !$ids || count($ids) !== $sources->count()) {
+            if (!$basis || (int) ($basis['plan'] ?? 0) !== (int) $user->plan_id || !$ids || count($ids) !== $sources->count()
+                || ($timeOnly && !Plan::sharedLock()->find($user->plan_id, ['id']))) {
                 throw new ApiException(__('无法核对原套餐折抵依据，请先取消此订单，再重新下单。'));
             }
-            if ($this->usageCredit($basis, $sources->sum(fn (Order $source) => $this->netOrderValue($source)), $user) < $order->surplus_amount) {
+            if (!$timeOnly && $this->usageCredit($basis, $sources->sum(fn (Order $source) => $this->netOrderValue($source)), $user) < $order->surplus_amount) {
                 throw new ApiException(__('套餐用量已变化，原折抵金额不足。请先取消此订单，再重新下单。'));
             }
         }

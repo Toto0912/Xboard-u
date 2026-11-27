@@ -10,6 +10,7 @@ import {
   checkoutOrder,
   fetchOrderDetail,
   fetchPaymentMethods,
+  type OrderItem,
 } from '@/api/order';
 import { fetchUserCommConfig } from '@/api/user';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -63,6 +64,7 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
 
   const symbol = commQuery.data?.currency_symbol || '¥';
   const order = detailQuery.data;
+  const shouldPoll = order?.status === 1 || (polling && order?.status === 0);
   const checkoutSequence = useRef(0);
   useLayoutEffect(() => {
     return () => { checkoutSequence.current++; };
@@ -76,7 +78,7 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
   }, [methods, selectedMethod]);
 
   useEffect(() => {
-    if (!polling || !trade_no) return;
+    if (!shouldPoll || !trade_no) return;
     let pending = false;
     let active = true;
     const timer = window.setInterval(async () => {
@@ -90,6 +92,7 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
           void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
         } else if ([2, 3, 4].includes(status)) {
           checkoutSequence.current++;
+          queryClient.setQueryData<OrderItem>(['order-detail', trade_no], current => current && { ...current, status });
           setPolling(false);
           setQrUrl(null);
           setRedirectPayUrl(null);
@@ -105,7 +108,7 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
       }
     }, 3000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [polling, trade_no, queryClient, t]);
+  }, [shouldPoll, trade_no, queryClient, t]);
 
   const activeMethodObj = useMemo(
     () => methods.find((m) => m.id === selectedMethod) ?? null,
@@ -157,7 +160,7 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
     mutationFn: () => cancelOrder(trade_no!),
     onSuccess: () => {
       checkoutSequence.current++;
-      queryClient.setQueryData<{ status: number }>(['order-detail', trade_no], current => current && { ...current, status: 2 });
+      queryClient.setQueryData<OrderItem>(['order-detail', trade_no], current => current && { ...current, status: 2 });
       toast.success(t('order.cancelSuccess'));
       setCancelOpen(false);
       setPolling(false);

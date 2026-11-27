@@ -3,11 +3,14 @@
 namespace Tests\Feature\Order;
 
 use App\Models\Order;
+use App\Models\Coupon;
+use App\Models\OrderPaymentAttempt;
 use App\Models\Plan;
 use App\Models\User;
 use App\Services\OrderService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -152,5 +155,88 @@ class CurrentPeriodCreditTest extends TestCase
         $this->assertSame(0, $order->surplus_amount);
         $this->assertSame([], $order->surplus_order_ids);
         $this->assertSame(10000, $order->total_amount);
+    }
+
+    public static function invalidTimeSources(): array
+    {
+        return array_map(fn ($reason) => [$reason], ['discounted', 'cancelled', 'missing', 'owner', 'plan', 'user moved', 'plan deleted', 'empty ids']);
+    }
+
+    #[DataProvider('invalidTimeSources')]
+    public function test_time_quote_requires_every_original_source_at_checkout(string $reason): void
+    {
+        Sanctum::actingAs($this->user);
+        $this->target->update(['prices' => ['monthly' => 2]]);
+        $first = $this->history($this->start);
+        $second = $this->history($this->start->addDay(), ['type' => Order::TYPE_RENEWAL]);
+        $upgrade = $this->quoteHalfwayTo($this->start->addMonths(2));
+        $this->assertSame([$first->id, $second->id], $upgrade->surplus_order_ids);
+        $this->assertSame(0, (int) $upgrade->total_amount);
+        match ($reason) {
+            'discounted' => $second->update(['status' => Order::STATUS_DISCOUNTED]),
+            'cancelled' => $second->update(['status' => Order::STATUS_CANCELLED]),
+            'missing' => $second->delete(),
+            'owner' => $second->update(['user_id' => $this->user->id + 100]),
+            'plan' => $second->update(['plan_id' => $this->target->id]),
+            'user moved' => $this->user->update(['plan_id' => Plan::create(['name' => 'Other', 'group_id' => 3, 'transfer_enable' => 1])->id]),
+            'plan deleted' => $this->plan->delete(),
+            'empty ids' => $upgrade->update(['surplus_order_ids' => []]),
+        };
+        $snapshot = fn () => [$upgrade->fresh()->getRawOriginal(), $this->user->fresh()->getRawOriginal(),
+            $first->fresh()->getRawOriginal(), $second->fresh()?->getRawOriginal(), OrderPaymentAttempt::count()];
+        $before = $snapshot();
+        Queue::fake();
+        $response = $this->postJson('/api/v1/user/order/checkout', ['trade_no' => $upgrade->trade_no])->assertStatus(400);
+        $this->assertStringContainsString('取消', $response->json('message'));
+        $this->assertSame($before, $snapshot());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_hidden_repriced_source_preserves_original_time_quote(): void
+    {
+        Sanctum::actingAs($this->user);
+        $this->target->update(['prices' => ['monthly' => 2]]);
+        $source = $this->history($this->start);
+        $order = $this->quoteHalfwayTo($this->start->addMonth());
+        $fields = ['surplus_amount', 'surplus_credit', 'balance_amount', 'discount_amount', 'total_amount', 'surplus_basis', 'surplus_order_ids'];
+        $quote = $order->only($fields);
+        $this->assertSame(500, (int) $quote['surplus_amount']);
+        $this->assertSame(300, (int) $quote['surplus_credit']);
+        $this->plan->update(['show' => false, 'sell' => false, 'prices' => ['monthly' => 1]]);
+        $this->travel(2)->days();
+        $this->user->update(['d' => 100 * 1073741824]);
+        admin_setting(['change_order_event_id' => 1]);
+        $this->postJson('/api/v1/user/order/checkout', ['trade_no' => $order->trade_no])->assertOk();
+        $this->postJson('/api/v1/user/order/checkout', ['trade_no' => $order->trade_no])->assertStatus(400);
+        $this->assertSame($quote, $order->fresh()->only($fields));
+        $this->assertSame(Order::STATUS_COMPLETED, $order->fresh()->status);
+        $this->assertSame(Order::STATUS_DISCOUNTED, $source->fresh()->status);
+        $this->assertSame($this->target->id, $this->user->fresh()->plan_id);
+        $this->assertSame(300, (int) $this->user->fresh()->balance);
+    }
+
+    public function test_rejected_time_quote_keeps_wallet_and_coupon_reserved_until_cancel(): void
+    {
+        Sanctum::actingAs($this->user);
+        $source = $this->history($this->start);
+        $this->travelTo($this->start->addSeconds(intdiv($this->user->expired_at - $this->start->timestamp, 2)));
+        $this->user->update(['balance' => 400]);
+        $this->target->update(['prices' => ['monthly' => 10]]);
+        $coupon = Coupon::create(['code' => 'TIME', 'name' => 'Time', 'type' => 1, 'value' => 100, 'show' => true, 'limit_use' => 1]);
+        $order = OrderService::createFromRequest($this->user, $this->target, 'monthly', $coupon->code)->fresh();
+        $this->assertSame(0, (int) $order->total_amount);
+        $this->assertSame(400, (int) $order->balance_amount);
+        $source->update(['status' => Order::STATUS_DISCOUNTED]);
+        $before = $order->getRawOriginal();
+        $args = ['trade_no' => $order->trade_no];
+        $this->postJson('/api/v1/user/order/checkout', $args)->assertStatus(400);
+        $this->assertSame($before, $order->fresh()->getRawOriginal());
+        $this->assertSame(0, (int) $coupon->fresh()->limit_use);
+        $this->assertSame(0, (int) $this->user->fresh()->balance);
+        foreach ([200, 400] as $status) {
+            $this->postJson('/api/v1/user/order/cancel', $args)->assertStatus($status);
+            $this->assertSame(1, (int) $coupon->fresh()->limit_use);
+            $this->assertSame(400, (int) $this->user->fresh()->balance);
+        }
     }
 }
