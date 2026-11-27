@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\OrderService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -95,6 +96,41 @@ class CurrentPeriodCreditTest extends TestCase
         $order = $this->quoteHalfwayTo($this->start->addMonths(2));
         $this->assertSame([$paid->id], $order->surplus_order_ids);
         $this->assertSame($credit, $order->surplus_amount);
+    }
+
+    public static function zeroCheckoutModes(): array
+    {
+        return [
+            'time only despite exhausted quota' => [0, 100, false, true],
+            'usage and time within original quote' => [1, 5, false, true],
+            'usage no longer covers original quote' => [1, 90, false, false],
+            'old quote with provable basis' => [1, 5, true, true],
+            'old quote with insufficient basis' => [1, 90, true, false],
+        ];
+    }
+
+    #[DataProvider('zeroCheckoutModes')]
+    public function test_zero_checkout_uses_original_period_and_current_usage(int $event, int $used, bool $legacy, bool $accept): void
+    {
+        Sanctum::actingAs($this->user);
+        admin_setting(['change_order_event_id' => $event]);
+        $this->target->update(['prices' => ['monthly' => 2]]);
+        $source = $this->history($this->start);
+        Plan::whereKey($this->plan->id)->update(['updated_at' => $this->start->timestamp]);
+        $order = $this->quoteHalfwayTo($this->start->addMonth());
+        $this->assertSame(0, (int) $order->total_amount);
+        $this->assertSame(500, (int) $order->surplus_amount);
+        if ($legacy) {
+            $order->update(['surplus_basis' => null]);
+        }
+        admin_setting(['change_order_event_id' => 1 - $event]);
+        $this->travel(2)->days();
+        $this->user->update(['d' => $used * 1073741824]);
+        $this->postJson('/api/v1/user/order/checkout', ['trade_no' => $order->trade_no])
+            ->assertStatus($accept ? 200 : 400);
+        $this->assertSame($accept ? Order::STATUS_COMPLETED : Order::STATUS_PENDING, $order->fresh()->status);
+        $this->assertSame($accept ? Order::STATUS_DISCOUNTED : Order::STATUS_COMPLETED, $source->fresh()->status);
+        $this->assertSame($accept ? 300 : 0, (int) $this->user->fresh()->balance);
     }
 
     public function test_current_renewal_after_other_plan_and_discounted_history_is_the_only_eligible_order(): void

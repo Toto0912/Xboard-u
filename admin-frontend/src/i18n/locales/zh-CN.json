@@ -1025,7 +1025,7 @@
     "banScope": "批量封禁",
     "scopes": {
       "selected": "已选用户 ({{count}})",
-      "filtered": "当前筛选结果",
+      "filtered": "执行时符合当前筛选条件的用户",
       "all": "全部用户"
     },
     "email": "邮箱",
@@ -1093,7 +1093,7 @@
     "mailContent": "邮件内容",
     "mailSent": "邮件已加入发送队列",
     "banTitle": "封禁用户",
-    "banConfirmDesc": "确定要封禁目标范围内的用户吗？",
+    "banConfirmDesc": "确定封禁{{scope}}吗？",
     "resetTrafficDesc": "确定将「{{email}}」的已用流量清零吗？"
   },
   "trafficReset": {

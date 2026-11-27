@@ -10,6 +10,8 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 final class TrafficBatchReceiver
 {
+    public const SOURCE_LEGACY = 'legacy';
+    public const SOURCE_CLIENT = 'client';
     // The existing daily stat tables store user_id and server_id as signed INTEGER.
     private const MAX_STAT_ID = 2147483647;
 
@@ -35,7 +37,7 @@ final class TrafficBatchReceiver
             $key = ['server_id' => $node->id, 'batch_id' => $batchId];
             $receipts = DB::table('v2_traffic_batches');
             $inserted = $receipts->insertOrIgnore($key + [
-                'digest' => $digest, 'received_at' => $received->timestamp,
+                'source' => self::SOURCE_CLIENT, 'digest' => $digest, 'received_at' => $received->timestamp,
                 'record_at' => $received->startOfDay()->timestamp,
                 'activity_type' => $node->type, 'stat_server_id' => $node->id,
                 'protocol' => $node->type, 'rate' => 0,
@@ -111,7 +113,7 @@ final class TrafficBatchReceiver
                 $payload = json_encode($chunk, JSON_THROW_ON_ERROR);
                 $id = DB::table('v2_traffic_batches')->insertGetId([
                     'server_id' => $nodeId, 'batch_id' => (string) Str::uuid(), 'digest' => hash('sha256', $payload),
-                    'received_at' => $received, 'record_at' => $day, 'activity_type' => $nodeType,
+                    'source' => self::SOURCE_LEGACY, 'received_at' => $received, 'record_at' => $day, 'activity_type' => $nodeType,
                     'stat_server_id' => $server['id'], 'protocol' => $protocol, 'rate' => $rate,
                     'raw_u' => $totals[$index][0], 'raw_d' => $totals[$index][1], 'payload' => $payload,
                 ]);

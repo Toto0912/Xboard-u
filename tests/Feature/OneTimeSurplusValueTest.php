@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\Coupon;
 use App\Models\Plan;
 use App\Models\User;
 use App\Services\OrderService;
@@ -59,6 +60,55 @@ class OneTimeSurplusValueTest extends TestCase
             'quota exceeded' => [60, 0, 20, 20 * self::GIB, 1, 0],
             'one byte consumed from a BIGINT quota' => [60, 0, 52428800, 1, 0, 9999],
         ];
+    }
+
+    public function test_zero_checkout_rechecks_all_credit_including_the_planned_refund(): void
+    {
+        $user = $this->customer();
+        Sanctum::actingAs($user);
+        $this->settle($this->order($this->plan(100)));
+        $target = $this->order($this->plan(10));
+        $this->assertSame(0, (int) $target->total_amount);
+        $this->assertGreaterThan(0, $target->surplus_credit);
+        User::whereKey($user->id)->update(['d' => 5 * self::GIB]);
+        $response = $this->postJson('/api/v1/user/order/checkout', ['trade_no' => $target->trade_no]);
+        $this->assertStringContainsString('取消', $response->json('message'));
+        $this->assertSame(Order::STATUS_PENDING, $target->fresh()->status);
+        $this->assertSame(0, $user->fresh()->balance);
+        $this->postJson('/api/v1/user/order/cancel', ['trade_no' => $target->trade_no])->assertOk();
+        $this->assertSame(Order::STATUS_CANCELLED, $target->fresh()->status);
+        $this->assertSame(0, $user->fresh()->balance);
+    }
+
+    public function test_one_cent_credit_loss_retains_reserved_wallet_and_coupon_until_cancel(): void
+    {
+        $user = $this->customer();
+        Sanctum::actingAs($user);
+        $source = $this->order($this->plan(100));
+        $this->settle($source);
+        $user->refresh()->update(['balance' => 1900]);
+        $coupon = Coupon::create(['code' => 'FINAL', 'name' => 'Final use', 'type' => 1,
+            'value' => 100, 'limit_use' => 1, 'show' => true, 'started_at' => time() - 60, 'ended_at' => time() + 3600]);
+        $target = $this->plan(120);
+        $input = ['plan_id' => $target->id, 'period' => 'onetime_price', 'coupon_code' => $coupon->code];
+        $trade = $this->postJson('/api/v1/user/order/save', $input)->assertOk()->json('data');
+        $order = Order::where('trade_no', $trade)->sole();
+        $this->assertSame(0, (int) $order->total_amount);
+        $this->assertSame(10000, (int) $order->surplus_amount);
+        $this->assertSame(1900, (int) $order->balance_amount);
+        User::whereKey($user->id)->update(['d' => 1]);
+        $request = ['trade_no' => $trade];
+        $this->postJson('/api/v1/user/order/checkout', $request)->assertStatus(400);
+        $this->assertSame(Order::STATUS_PENDING, $order->fresh()->status);
+        $this->assertSame(0, (int) $user->fresh()->balance);
+        $this->assertSame(0, (int) $coupon->fresh()->limit_use);
+        $this->postJson('/api/v1/user/order/cancel', $request)->assertOk();
+        $this->postJson('/api/v1/user/order/cancel', $request)->assertStatus(400);
+        $this->assertSame(1900, (int) $user->fresh()->balance);
+        $this->assertSame(1, (int) $coupon->fresh()->limit_use);
+        $this->assertSame(Order::STATUS_COMPLETED, $source->fresh()->status);
+        $newTrade = $this->postJson('/api/v1/user/order/save', $input)->assertOk()->json('data');
+        $this->assertSame(1, (int) Order::where('trade_no', $newTrade)->sole()->total_amount);
     }
 
     #[DataProvider('purchases')]

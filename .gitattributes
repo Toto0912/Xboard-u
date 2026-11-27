@@ -1,5 +1,7 @@
 * text=auto
 *.sh text eol=lf
+admin-frontend/index.html text eol=lf
+user-frontend/index.html text eol=lf
 *.css linguist-vendored
 *.scss linguist-vendored
 *.js linguist-vendored

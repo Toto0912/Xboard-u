@@ -28,6 +28,27 @@ class TrafficBatchConsumerTest extends TestCase
     private const DAY = 1704067200;
     private const STAGES = ['usage', 'user_stat', 'server_stat', 'quota_check', 'activity'];
 
+    public function test_prune_previews_and_rechecks_only_completed_legacy_receipts(): void
+    {
+        $table = DB::table('v2_traffic_batches');
+        $age = now()->subDays(100)->timestamp;
+        $ids = [];
+        foreach ([['legacy', $age], ['client', $age], [null, $age], ['legacy', null],
+            ['legacy', now()->timestamp], ['legacy', $age]] as [$source, $completion]) {
+            $ids[] = $table->insertGetId(['server_id' => 1, 'batch_id' => (string) Str::uuid(),
+                'digest' => str_repeat('a', 64), 'source' => $source, 'received_at' => $age,
+                'record_at' => $age, 'activity_type' => 'vless', 'protocol' => 'vless', 'stat_server_id' => 1,
+                'rate' => 1, 'completed_at' => $completion]);
+        }
+        DB::table('v2_traffic_batch_tasks')->insert(['receipt_id' => $ids[5], 'kind' => 'usage', 'available_at' => $age]);
+        $this->artisan('traffic:prune-legacy')->assertSuccessful();
+        $this->assertSame(6, $table->count());
+        for ($i = 0; $i < 2; $i++) {
+            $this->artisan('traffic:prune-legacy --execute')->assertSuccessful();
+            $this->assertEquals(array_slice($ids, 1), $table->orderBy('id')->pluck('id')->all());
+        }
+    }
+
     private function receipt(float $rate = 1): array
     {
         Bus::fake();

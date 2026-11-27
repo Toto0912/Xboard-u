@@ -63,6 +63,44 @@ class PackageManagementTest extends TestCase
         }
     }
 
+    public function test_active_theme_selection_and_dotted_directory_match_the_public_route(): void
+    {
+        $name = 'Example.' . Str::random(10);
+        $theme = app(ThemeService::class);
+        try {
+            $this->assertTrue($theme->upload($this->archive([
+                'config.json' => json_encode(['name' => $name, 'version' => '1.0.0']),
+                'dashboard.blade.php' => 'Theme fixture {{ $theme }}',
+            ])));
+            foreach ([[null, $name], [$name, null], [$name, 'Xboard']] as [$current, $legacy]) {
+                admin_setting(['frontend_theme' => $current, 'current_theme' => $legacy]);
+                $this->assertSame($name, ThemeService::activeTheme());
+                $this->get('/')->assertOk()->assertSee('Theme fixture ' . $name);
+                $this->assertTrue($theme->refreshCurrentTheme());
+                try {
+                    $theme->delete($name);
+                    $this->fail('Active theme deletion should be rejected');
+                } catch (\Exception $e) {
+                    $this->assertSame('Current theme cannot be deleted', $e->getMessage());
+                }
+            }
+            try {
+                $theme->switch('missing-' . $name);
+                $this->fail('Unknown theme should be rejected');
+            } catch (\Exception $e) {
+                $this->assertSame('Theme not found', $e->getMessage());
+            }
+            $this->assertSame($name, ThemeService::activeTheme());
+            $this->assertTrue($theme->switch('Xboard'));
+            $this->assertSame('Xboard', admin_setting('current_theme'));
+            $this->assertSame('Xboard', admin_setting('frontend_theme'));
+            $this->assertTrue($theme->delete($name));
+        } finally {
+            File::deleteDirectory(public_path('theme/' . $name));
+            File::deleteDirectory(storage_path('theme/' . $name));
+        }
+    }
+
     public function test_plugin_upload_update_uninstall_and_protected_directory(): void
     {
         $code = 'fixture_' . strtolower(Str::random(10));

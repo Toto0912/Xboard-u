@@ -301,9 +301,8 @@ class OrderService
             if ($quota <= 0 || $paid <= 0) {
                 return;
             }
-            $remaining = max(0, $quota - max(0, (int) $user->u) - max(0, (int) $user->d));
-            // Cents times bytes can exceed PHP's integer range. Round down once, at the end.
-            $order->surplus_amount = BigInteger::of($paid)->multipliedBy($remaining)->quotient($quota)->toInt();
+            $order->surplus_basis = ['mode' => 'once', 'plan' => $user->plan_id, 'quota' => $quota];
+            $order->surplus_amount = $this->usageCredit($order->surplus_basis, $paid, $user);
             $order->surplus_order_ids = [$lastOneTimeOrder->id];
         } else {
             $now = now()->timestamp;
@@ -320,14 +319,10 @@ class OrderService
             $totalSeconds = $user->expired_at - $orders->first()->service_at;
             $remainSeconds = max(0, $user->expired_at - $now);
             $ratio = $totalSeconds > 0 ? min(1, $remainSeconds / $totalSeconds) : 0;
-            if (admin_setting('change_order_event_id', 0) == 1) {
-                $totalTraffic = $user->plan?->transfer_enable * $orderMonthSum;
-                $usedTraffic = Helper::transferToGB($user->u + $user->d);
-                $trafficRatio = $totalTraffic > 0 ? max(0, $totalTraffic - $usedTraffic) / $totalTraffic : 0;
-                $ratio = min($ratio, $trafficRatio);
-            }
-
-            $order->surplus_amount = (int) max(0, $orderAmountSum * $ratio);
+            $usesTraffic = admin_setting('change_order_event_id', 0) == 1;
+            $order->surplus_basis = ['mode' => $usesTraffic ? 'period' : 'time', 'plan' => $user->plan_id,
+                'quota' => $user->plan?->transfer_enable * $orderMonthSum, 'time_ratio' => $ratio];
+            $order->surplus_amount = $this->usageCredit($order->surplus_basis, $orderAmountSum, $user);
             $order->surplus_order_ids = $orders->pluck('id')->all();
         }
     }
@@ -335,6 +330,67 @@ class OrderService
     private function netOrderValue(Order $order): int
     {
         return $order->total_amount + $order->balance_amount + $order->surplus_amount - $order->surplus_credit;
+    }
+
+    private function usageCredit(array $basis, int $paid, User $user): int
+    {
+        $quota = $basis['quota'];
+        if ($basis['mode'] === 'once') {
+            $remaining = max(0, $quota - max(0, (int) $user->u) - max(0, (int) $user->d));
+            return $quota > 0 ? BigInteger::of($paid)->multipliedBy($remaining)->quotient($quota)->toInt() : 0;
+        }
+        $ratio = $basis['time_ratio'];
+        if ($basis['mode'] === 'period') {
+            $used = Helper::transferToGB($user->u + $user->d);
+            $ratio = min($ratio, $quota > 0 ? max(0, $quota - $used) / $quota : 0);
+        }
+        return (int) max(0, $paid * $ratio);
+    }
+
+    // Called inside checkout's transaction, after locking the pending order and its plan.
+    public function confirmZeroPayment(): void
+    {
+        $order = $this->order;
+        if ((int) $order->type === Order::TYPE_UPGRADE && $order->surplus_amount > 0
+            && ($order->surplus_basis['mode'] ?? null) !== 'time') {
+            $user = User::lockForUpdate()->findOrFail($order->user_id);
+            $ids = $order->surplus_order_ids ?? [];
+            $sources = Order::query()->useWritePdo()->where('user_id', $user->id)->where('plan_id', $user->plan_id)
+                ->where('status', Order::STATUS_COMPLETED)->whereIntegerInRaw('id', $ids)->get();
+            $basis = $order->surplus_basis;
+            if ($basis === null && $user->expired_at === null && $sources->count() === 1
+                && PlanService::getPeriodKey($sources->first()->period) === Plan::PERIOD_ONETIME) {
+                $basis = ['mode' => 'once', 'plan' => $user->plan_id, 'quota' => (int) $user->transfer_enable];
+            } elseif ($basis === null && $ids && $user->expired_at !== null) {
+                $at = (int) $order->created_at;
+                $history = $this->currentPeriodOrders($user, $at);
+                if ($history->isNotEmpty() && $history->pluck('id')->sort()->values()->all() === collect($ids)->sort()->values()->all()
+                    && $user->plan && $user->plan->updated_at <= $at) {
+                    $seconds = $user->expired_at - $history->first()->service_at;
+                    $months = $history->sum(fn ($item) => self::STR_TO_TIME[PlanService::getPeriodKey($item->period)] ?? 0);
+                    // Without the historical switch, require both possible modes to cover the original quote.
+                    $basis = ['mode' => 'period', 'plan' => $user->plan_id, 'quota' => $user->plan->transfer_enable * $months,
+                        'time_ratio' => $seconds > 0 ? min(1, max(0, $user->expired_at - $at) / $seconds) : 0];
+                }
+            }
+            if (!$basis || (int) $basis['plan'] !== (int) $user->plan_id || !$ids || count($ids) !== $sources->count()) {
+                throw new ApiException(__('无法核对原套餐折抵依据，请先取消此订单，再重新下单。'));
+            }
+            if ($this->usageCredit($basis, $sources->sum(fn (Order $source) => $this->netOrderValue($source)), $user) < $order->surplus_amount) {
+                throw new ApiException(__('套餐用量已变化，原折抵金额不足。请先取消此订单，再重新下单。'));
+            }
+        }
+        $this->markProcessing($order, $order->trade_no);
+    }
+
+    private function markProcessing(Order $order, string $reference): void
+    {
+        $order->status = Order::STATUS_PROCESSING;
+        $order->paid_at = time();
+        $order->callback_no = $reference;
+        if (!$order->save()) {
+            throw new \RuntimeException('Failed to save order status.');
+        }
     }
 
     private function currentPeriodOrders(User $user, int $now): Collection
@@ -439,12 +495,7 @@ class OrderService
                     }
                     $order->payment_id = $verifiedPaymentId;
                 }
-                $order->status = Order::STATUS_PROCESSING;
-                $order->paid_at = time();
-                $order->callback_no = $callbackNo;
-                if (!$order->save()) {
-                    throw new \RuntimeException('Failed to save order status.');
-                }
+                $this->markProcessing($order, $callbackNo);
 
                 return [$order, true];
             });

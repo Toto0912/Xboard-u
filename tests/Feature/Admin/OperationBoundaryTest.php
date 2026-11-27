@@ -46,6 +46,111 @@ class OperationBoundaryTest extends TestCase
             'rate' => 1, 'show' => true, 'enabled' => true]));
     }
 
+    public function test_admin_password_change_revokes_only_target_sessions(): void
+    {
+        $target = User::withoutEvents(fn () => User::forceCreate([
+            'email' => 'reset@example.test', 'password' => 'previous', 'token' => str_repeat('b', 32),
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        ]));
+        $target->createToken('desktop');
+        $target->createToken('mobile');
+        $this->admin->createToken('admin');
+        $this->postJson($this->root.'/user/update', ['id' => $target->id, 'remarks' => 'checked'])->assertOk();
+        $this->assertSame(2, $target->tokens()->count());
+        \App\Services\Plugin\HookManager::register('admin.user.update.after', static function (): void {
+            throw new \RuntimeException('fixture update interruption');
+        });
+        try {
+            $this->postJson($this->root.'/user/update', ['id' => $target->id, 'password' => 'failed-new-password'])
+                ->assertStatus(500);
+            $this->assertSame('previous', $target->fresh()->password);
+            $this->assertSame(2, $target->tokens()->count());
+        } finally {
+            \App\Services\Plugin\HookManager::remove('admin.user.update.after');
+        }
+        $this->postJson($this->root.'/user/update', ['id' => $target->id, 'password' => 'new-test-password'])->assertOk();
+        $this->assertSame(0, $target->tokens()->count());
+        $this->assertSame(1, $this->admin->tokens()->count());
+        $this->assertSame($target->uuid, $target->fresh()->uuid);
+        $this->assertSame($target->token, $target->fresh()->token);
+        $this->assertTrue(password_verify('new-test-password', $target->fresh()->password));
+    }
+
+    public function test_bulk_writes_reject_empty_targets_before_dispatch_or_revocation(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->admin->createToken('existing');
+        foreach (['ban', 'sendMail'] as $action) {
+            foreach ([['scope' => 'selected', 'user_ids' => []], ['scope' => 'filtered', 'filter' => []],
+                ['scope' => 'filtered', 'filter' => [['id' => 'email', 'value' => 'like:']]]] as $target) {
+                $this->postJson($this->root.'/user/'.$action, $target + ['subject' => 'fixture', 'content' => 'fixture'])->assertStatus(422);
+            }
+        }
+        \Illuminate\Support\Facades\Queue::assertNothingPushed();
+        $this->assertFalse((bool) $this->admin->fresh()->banned);
+        $this->assertSame(1, $this->admin->tokens()->count());
+    }
+
+    public function test_today_rank_excludes_both_adjacent_days_and_records_validate_windows(): void
+    {
+        $start = now()->startOfDay();
+        $end = $start->copy()->addDay()->timestamp;
+        $node = $this->node();
+        foreach ([$start->timestamp - 1, $start->timestamp, $end - 1, $end] as $ts) {
+            \Illuminate\Support\Facades\DB::table('v2_stat')->insert(['record_at' => $ts, 'record_type' => 'd',
+                'order_count' => 1, 'order_total' => 123, 'paid_count' => 1, 'paid_total' => 123,
+                'commission_count' => 1, 'commission_total' => 15, 'register_count' => 2, 'invite_count' => 0,
+                'transfer_used_total' => '0', 'created_at' => $ts, 'updated_at' => $ts]);
+            \Illuminate\Support\Facades\DB::table('v2_stat_server')->insert(['server_id' => $node->id, 'server_type' => $node->type,
+                'u' => 10, 'd' => 2, 'record_type' => 'd', 'record_at' => $ts, 'created_at' => $ts, 'updated_at' => $ts]);
+        }
+        $this->getJson($this->root.'/stat/getServerLastRank')->assertOk()->assertJsonPath('data.0.total', 24);
+        $url = $this->root.'/stat/getStatRecord?';
+        foreach (['paid_total', 'commission_total', 'register_count'] as $type) {
+            $records = $this->getJson($url.'type='.$type)->assertOk()->assertJsonCount(2, 'data')->json('data');
+            $this->assertEquals([$start->timestamp, $end - 1], array_column($records, 'record_at'));
+            $this->assertEquals(['paid_total'=>1.23,'commission_total'=>0.15,'register_count'=>2][$type], $records[0][$type]);
+            $this->getJson($url.'type='.$type.'&start_at=10&end_at=20')->assertOk();
+        }
+        foreach (['type=unknown','type=paid_total&start_at=20','type=paid_total&start_at=20&end_at=10'] as $query) {
+            $this->getJson($url.$query)->assertStatus(422);
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('writeTargets')]
+    public function test_bulk_confirmation_applies_to_matching_recipients(string $scope, array $names): void
+    {
+        $users = [];
+        foreach (['a','b','c'] as $name) {
+            $users[$name] = User::withoutEvents(fn () => User::forceCreate(['email'=>"$name@example.test",'password'=>'test',
+                'uuid'=>(string) \Illuminate\Support\Str::uuid(),'token'=>\Illuminate\Support\Str::random(32),'group_id'=>$name === 'c' ? 42 : 41]));
+            $users[$name]->createToken('existing');
+        }
+        $payload = ['scope'=>$scope] + match ($scope) {
+            'selected' => ['user_ids'=>[$users['a']->id, $users['a']->id]],
+            'filtered' => ['filter'=>[['id'=>'group_id','value'=>'eq:41']]],
+            default => [],
+        };
+        \Illuminate\Support\Facades\Queue::fake();
+        $this->postJson($this->root.'/user/sendMail', $payload+['subject'=>'test','content'=>'test'])->assertOk();
+        $queued = \Illuminate\Support\Facades\Queue::pushed(\App\Jobs\SendEmailJob::class)
+            ->map(fn ($job) => (new \ReflectionProperty($job,'params'))->getValue($job)['email'])->all();
+        $expected = array_map(fn ($name)=>$users[$name]->email,$names);
+        if ($scope === 'all') $expected[] = $this->admin->email;
+        $this->assertEqualsCanonicalizing($expected,$queued);
+        $this->postJson($this->root.'/user/ban', $payload)->assertOk();
+        foreach ($users as $name=>$target) {
+            $banned = in_array($name,$names,true);
+            $this->assertSame($banned,(bool)$target->fresh()->banned);
+            $this->assertSame($banned ? 0 : 1,$target->tokens()->count());
+        }
+    }
+
+    public static function writeTargets(): array
+    {
+        return [['selected',['a']], ['filtered',['a','b']], ['all',['a','b','c']]];
+    }
+
     public function test_list_fields_are_bounded_and_frontend_sort_fields_work(): void
     {
         foreach (['user', 'order', 'ticket', 'coupon'] as $resource) {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V1\User;
 
 use App\Exceptions\ApiException;
+use App\Jobs\OrderHandleJob;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\User\OrderSave;
 use App\Http\Resources\OrderResource;
@@ -117,6 +118,10 @@ class OrderController extends Controller
         $tradeNo = $request->input('trade_no');
         $method = $request->input('method');
         [$order, $paymentService, $attempt] = DB::transaction(function () use ($tradeNo, $method, $request) {
+            if (DB::connection()->getDriverName() === 'sqlite') {
+                DB::table('v2_order')->where('trade_no', $tradeNo)->where('user_id', $request->user()->id)
+                    ->where('status', Order::STATUS_PENDING)->update(['status' => DB::raw('status')]);
+            }
             $order = Order::where('trade_no', $tradeNo)->where('user_id', $request->user()->id)
                 ->where('status', Order::STATUS_PENDING)->lockForUpdate()->first();
             if (!$order) {
@@ -127,6 +132,7 @@ class OrderController extends Controller
             }
             PlanService::validateCheckoutCapacity($order);
             if ((int) $order->total_amount === 0) {
+                (new OrderService($order))->confirmZeroPayment();
                 return [$order, null, null];
             }
             $payment = Payment::query()->useWritePdo()->find($method);
@@ -142,9 +148,7 @@ class OrderController extends Controller
         }, 3);
 
         if ($attempt === null) {
-            $orderService = new OrderService($order);
-            if (!$orderService->paid($order->trade_no))
-                return $this->fail([400, '支付失败']);
+            OrderHandleJob::dispatchSync($order->trade_no);
             return response([
                 'type' => -1,
                 'data' => true

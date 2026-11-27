@@ -230,7 +230,8 @@ class StatController extends Controller
     // 获取当日实时流量排行
     public function getServerLastRank()
     {
-        $data = $this->service->getServerRank();
+        $start = now()->startOfDay();
+        $data = $this->service->getServerRank($start->timestamp, $start->copy()->addDay()->timestamp);
         return $this->success(data: $data);
     }
     // 获取昨日节点流量排行
@@ -260,8 +261,16 @@ class StatController extends Controller
 
     public function getStatRecord(Request $request)
     {
+        $data = $request->validate([
+            'type' => 'required|in:paid_total,commission_total,register_count',
+            'start_at' => 'required_with:end_at|integer|min:0',
+            'end_at' => 'required_with:start_at|integer|gt:start_at',
+        ]);
+        $today = now()->startOfDay();
+        $this->service->setStartAt($data['start_at'] ?? $today->timestamp);
+        $this->service->setEndAt($data['end_at'] ?? $today->copy()->addDay()->timestamp);
         return [
-            'data' => $this->service->getStatRecord($request->input('type'))
+            'data' => $this->service->getStatRecord($data['type'])
         ];
     }
 

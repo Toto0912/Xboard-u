@@ -47,11 +47,12 @@ class Order extends Model
     protected $table = 'v2_order';
     protected $dateFormat = 'U';
     protected $guarded = ['id'];
-    protected $hidden = ['coupon_quota_deducted'];
+    protected $hidden = ['coupon_quota_deducted', 'surplus_basis'];
     protected $casts = [
         'created_at' => 'timestamp',
         'updated_at' => 'timestamp',
         'surplus_order_ids' => 'array',
+        'surplus_basis' => 'array',
         'handling_amount' => 'integer',
         'coupon_quota_deducted' => 'boolean',
     ];

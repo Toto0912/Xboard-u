@@ -123,9 +123,12 @@ class UserService
         $server->rate = $server->getCurrentRate();
         $server = $server->toArray();
 
-        list($server, $protocol, $data) = HookManager::filter('traffic.process.before', [$server, $protocol, $data]);
+        $report = HookManager::filter('traffic.process.before', [$server, $protocol, $data]);
         // Compatible with legacy hook
-        list($server, $protocol, $data) = HookManager::filter('traffic.before_process', [$server, $protocol, $data]);
+        $report = HookManager::filter('traffic.before_process', $report);
+        abort_unless(is_array($report) && isset($report[0]['id'], $report[0]['rate'], $report[1], $report[2])
+            && is_array($report[0]) && is_array($report[2]), 422, 'Invalid legacy traffic report');
+        [$server, $protocol, $data] = $report;
 
         $timestamp = strtotime(date('Y-m-d'));
         // These jobs use only ID/rate. Do not serialize TLS keys and custom
@@ -137,6 +140,18 @@ class UserService
             }
             abort_unless(HookManager::hasHook('traffic.process.before') || HookManager::hasHook('traffic.before_process'),
                 422, 'Invalid traffic report');
+            abort_unless(is_array($data) && is_string($protocol) && $protocol !== '' && strlen($protocol) <= 11
+                && filter_var($server['id'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 2147483647]]) !== false
+                && is_numeric($server['rate']) && is_finite((float) $server['rate']) && $server['rate'] >= 0 && $server['rate'] <= 99999999.99,
+                422, 'Invalid legacy traffic metadata');
+            foreach ($data as $id => $bytes) {
+                abort_unless(is_int($id) && $id > 0 && $id <= 2147483647 && is_array($bytes)
+                    && array_is_list($bytes) && count($bytes) === 2, 422, 'Invalid legacy traffic row');
+                foreach ($bytes as $value) {
+                    abort_unless((is_int($value) || is_float($value)) && is_finite((float) $value) && $value >= 0
+                        && $value < PHP_INT_MAX && $value * $server['rate'] < PHP_INT_MAX, 422, 'Invalid legacy traffic bytes');
+                }
+            }
         }
         collect($data)->chunk(1000)->each(function ($chunk) use ($timestamp, $server, $protocol) {
             TrafficFetchJob::dispatch($server, $chunk->toArray(), $protocol, $timestamp);

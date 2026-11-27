@@ -413,6 +413,14 @@ class NodeWorker
 
     private function handleNodeEvent(TcpConnection $conn, int $nodeId, string $event, array $data): void
     {
+        if (!empty($conn->machineId) && $event === 'pong' && Cache::get("node_ws_alive:{$nodeId}") === null) {
+            try {
+                $this->recoverMachineNode($conn, $nodeId);
+            } catch (\Throwable $e) {
+                Log::warning("[WS] Deferred pong recovery for node#{$nodeId}", ['exception' => $e::class]);
+                return;
+            }
+        }
         // A connection on another worker may already own this node. Serialize its
         // handoff with reports so a late snapshot cannot erase the new owner's devices.
         $reauthenticate = Cache::lock("node_ws_change:{$nodeId}", self::CONNECTION_TTL)->block(1, function () use ($conn, $nodeId, $event, $data) {
@@ -427,6 +435,23 @@ class NodeWorker
         // After expiry or a cache flush only a fresh handshake may reclaim the node.
         // Close outside the lock, since onClose also takes it.
         if ($reauthenticate) $conn->close();
+    }
+
+    private function recoverMachineNode(TcpConnection $conn, int $nodeId): void
+    {
+        $machineId = $conn->machineId;
+        Cache::lock("machine_ws_change:{$machineId}", self::CONNECTION_TTL)->block(1, function () use ($conn, $nodeId, $machineId) {
+            if (Cache::get("machine_ws_owner:{$machineId}") !== $conn->wsOwner) return;
+            Cache::lock("node_ws_change:{$nodeId}", self::CONNECTION_TTL)->block(1, function () use ($conn, $nodeId, $machineId) {
+                $key = "node_ws_alive:{$nodeId}";
+                if (Cache::has($key) || NodeRegistry::get($nodeId) !== $conn) return;
+                $token = ServerMachine::query()->useWritePdo()->whereKey($machineId)->where('is_active', true)->value('token');
+                if (!is_string($token) || !hash_equals($conn->machineTokenHash, hash('sha256', $token))) return;
+                if (Server::query()->useWritePdo()->whereKey($nodeId)->where('machine_id', $machineId)->where('enabled', true)->exists()) {
+                    Cache::add($key, $conn->wsOwner, self::CONNECTION_TTL);
+                }
+            });
+        });
     }
 
     private function detachMachine(TcpConnection $conn): void

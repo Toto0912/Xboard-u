@@ -85,6 +85,11 @@ interface AdvancedFilterRow {
   value: string;
 }
 
+type BulkTarget =
+  | { scope: 'selected'; user_ids: number[] }
+  | { scope: 'filtered'; filter: UserFilterItem[] }
+  | { scope: 'all' };
+
 export default function UserManagePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -112,10 +117,9 @@ export default function UserManagePage() {
   const [createCount, setCreateCount] = useState('');
   const [createCsv, setCreateCsv] = useState(false);
 
-  const [mailOpen, setMailOpen] = useState(false);
+  const [bulk, setBulk] = useState<{ action: 'mail' | 'ban'; target: BulkTarget } | null>(null);
   const [mailSubject, setMailSubject] = useState('');
   const [mailContent, setMailContent] = useState('');
-  const [confirmBanOpen, setConfirmBanOpen] = useState(false);
 
   const [assignUser, setAssignUser] = useState<UserRecord | null>(null);
   const [assignPlanId, setAssignPlanId] = useState('');
@@ -206,7 +210,7 @@ export default function UserManagePage() {
     mutationFn: sendMailToUsers,
     onSuccess: () => {
       toast.success(t('userManage.mailSent'));
-      setMailOpen(false);
+      setBulk(null);
       setMailSubject('');
       setMailContent('');
     },
@@ -216,7 +220,7 @@ export default function UserManagePage() {
     mutationFn: banUsers,
     onSuccess: () => {
       toast.success(t('common.operationSuccess'));
-      setConfirmBanOpen(false);
+      setBulk(null);
       setSelectedIds([]);
       invalidate();
     },
@@ -264,8 +268,6 @@ export default function UserManagePage() {
 
   useEffect(() => {
     setSelectedIds([]);
-    setConfirmBanOpen(false);
-    setMailOpen(false);
   }, [activeFilters, page, pageSize, sortField, sortDesc]);
 
   useEffect(() => {
@@ -281,6 +283,18 @@ export default function UserManagePage() {
       : activeFilters.length > 0
         ? ('filtered' as const)
         : ('all' as const);
+
+  const openBulk = (action: 'mail' | 'ban') => {
+    const target: BulkTarget = currentScope === 'selected'
+      ? { scope: 'selected', user_ids: [...new Set(selectedIds)] }
+      : currentScope === 'filtered'
+        ? { scope: 'filtered', filter: structuredClone(activeFilters) }
+        : { scope: 'all' };
+    setBulk({ action, target });
+  };
+  const bulkLabel = bulk && t(`userManage.scopes.${bulk.target.scope}`, {
+    count: bulk.target.scope === 'selected' ? bulk.target.user_ids.length : undefined,
+  });
 
   const toggleSort = (field: string) => {
     if (sortField === field) setSortDesc((v) => !v);
@@ -407,10 +421,10 @@ export default function UserManagePage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setMailOpen(true)}>
+              <DropdownMenuItem onClick={() => openBulk('mail')}>
                 <Mail className="mr-2 h-4 w-4" />
                 {t('userManage.sendMailScope', {
-                  scope: t(`userManage.scopes.${currentScope}`),
+                  scope: t(`userManage.scopes.${currentScope}`, { count: selectedIds.length }),
                 })}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -424,17 +438,17 @@ export default function UserManagePage() {
               >
                 <Download className="mr-2 h-4 w-4" />
                 {t('userManage.exportCsvScope', {
-                  scope: t(`userManage.scopes.${currentScope}`),
+                  scope: t(`userManage.scopes.${currentScope}`, { count: selectedIds.length }),
                 })}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onClick={() => setConfirmBanOpen(true)}
+                onClick={() => openBulk('ban')}
               >
                 <Ban className="mr-2 h-4 w-4" />
                 {t('userManage.banScope', {
-                  scope: t(`userManage.scopes.${currentScope}`),
+                  scope: t(`userManage.scopes.${currentScope}`, { count: selectedIds.length }),
                 })}
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -1014,27 +1028,24 @@ export default function UserManagePage() {
       </Dialog>
 
       {/* Send Mail Dialog */}
-      <Dialog open={mailOpen} onOpenChange={setMailOpen}>
+      <Dialog open={bulk?.action === 'mail'} onOpenChange={(open) => !open && setBulk(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('userManage.sendMailTitle')}</DialogTitle>
             <DialogDescription>
-              {t('userManage.sendMailScope', {
-                scope: t(`userManage.scopes.${currentScope}`),
-              })}
+              {bulkLabel}
             </DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (bulk?.action !== 'mail') return;
               if (!mailSubject.trim() || !mailContent.trim()) {
                 toast.error(t('userManage.mailValidation'));
                 return;
               }
               mailMutation.mutate({
-                scope: currentScope,
-                ...(currentScope === 'selected' ? { user_ids: selectedIds } : {}),
-                ...(currentScope === 'filtered' ? { filter: activeFilters } : {}),
+                ...bulk.target,
                 subject: mailSubject.trim(),
                 content: mailContent.trim(),
               });
@@ -1054,7 +1065,7 @@ export default function UserManagePage() {
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setMailOpen(false)}>
+              <Button type="button" variant="ghost" onClick={() => setBulk(null)}>
                 {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={mailMutation.isPending}>
@@ -1078,8 +1089,8 @@ export default function UserManagePage() {
               e.preventDefault();
               if (!assignUser) return;
               const pid = Number(assignPlanId);
-              const yuan = Number(assignAmountYuan);
-              if (!pid || !Number.isFinite(yuan) || yuan < 0) {
+              const cents = parseCents(assignAmountYuan);
+              if (!pid || cents === null || cents < 0) {
                 toast.error(t('order.assignValidationError'));
                 return;
               }
@@ -1087,7 +1098,7 @@ export default function UserManagePage() {
                 email: assignUser.email,
                 plan_id: pid,
                 period: assignPeriod,
-                total_amount: Math.round(yuan * 100),
+                total_amount: cents,
               });
             }}
             className="space-y-4"
@@ -1161,19 +1172,15 @@ export default function UserManagePage() {
       </Dialog>
 
       <ConfirmDialog
-        open={confirmBanOpen}
-        onOpenChange={setConfirmBanOpen}
+        open={bulk?.action === 'ban'}
+        onOpenChange={(open) => !open && setBulk(null)}
         title={t('userManage.banTitle')}
         description={t('userManage.banConfirmDesc', {
-          scope: t(`userManage.scopes.${currentScope}`),
+          scope: bulkLabel,
         })}
         loading={banMutation.isPending}
         onConfirm={() =>
-          banMutation.mutate({
-            scope: currentScope,
-            ...(currentScope === 'selected' ? { user_ids: selectedIds } : {}),
-            ...(currentScope === 'filtered' ? { filter: activeFilters } : {}),
-          })
+          bulk?.action === 'ban' && banMutation.mutate(bulk.target)
         }
       />
 

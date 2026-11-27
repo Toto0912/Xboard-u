@@ -213,7 +213,7 @@ class StatisticalService
             case "paid_total": {
                 return Stat::select([
                     '*',
-                    DB::raw('paid_total / 100 as paid_total')
+                    DB::raw('paid_total / 100.0 as paid_total')
                 ])
                     ->where('record_at', '>=', $this->startAt)
                     ->where('record_at', '<', $this->endAt)
@@ -223,7 +223,7 @@ class StatisticalService
             case "commission_total": {
                 return Stat::select([
                     '*',
-                    DB::raw('commission_total / 100 as commission_total')
+                    DB::raw('commission_total / 100.0 as commission_total')
                 ])
                     ->where('record_at', '>=', $this->startAt)
                     ->where('record_at', '<', $this->endAt)

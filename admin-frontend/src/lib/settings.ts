@@ -36,7 +36,7 @@ export function getPanelSettings(): PanelSettings {
     title: raw.title || 'Xboard',
     currency: raw.currency || 'CNY',
     currency_symbol: useCurrencySymbol.getState(),
-    version: raw.version || 'v2.4.2',
+    version: raw.version || 'v2.4.3',
     logo: raw.logo || undefined,
     secure_path: securePath.replace(/^\/+|\/+$/g, ''),
   };

@@ -186,4 +186,51 @@ class DeviceStateTest extends TestCase
             $this->assertSame($new, NodeRegistry::get(10));
         } finally { NodeRegistry::remove(10, $new); }
     }
+
+    public function test_machine_heartbeat_recovers_only_its_missing_child_owner(): void
+    {
+        config(['cache.default' => 'redis']);
+        $cache = \Illuminate\Support\Facades\Cache::store('redis');
+        $machine = \App\Models\ServerMachine::create(['name' => 'recovery', 'token' => str_repeat('r', 32), 'is_active' => true]);
+        $conn = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $worker = (new \ReflectionClass(NodeWorker::class))->newInstanceWithoutConstructor();
+        $conn->machineId = $machine->id;
+        $conn->machineTokenHash = hash('sha256', $machine->token);
+        $conn->wsOwner = 'fixture-owner';
+        $ids = [];
+        foreach (['first', 'sibling'] as $name) {
+            $node = Server::withoutEvents(fn () => Server::forceCreate(['name' => $name, 'type' => 'vmess', 'host' => 'example.test',
+                'port' => 80, 'server_port' => 80, 'rate' => 1, 'enabled' => true, 'machine_id' => $machine->id]));
+            $ids[] = $node->id;
+            NodeRegistry::add($node->id, $conn);
+        }
+        $conn->machineNodeIds = $ids;
+        NodeRegistry::addMachine($machine->id, $conn);
+        $cache->put("machine_ws_owner:{$machine->id}", $conn->wsOwner, 60);
+        $user = $this->user(42);
+        [$id, $sibling] = $ids;
+        $cache->forget("node_ws_alive:$id");
+        $cache->put("node_ws_alive:$sibling", $conn->wsOwner, 60);
+        try {
+            $worker->onMessage($conn, json_encode(['event' => 'pong']));
+            foreach ($ids as $child) {
+                $this->assertSame($conn->wsOwner, $cache->get("node_ws_alive:$child"));
+                $worker->onMessage($conn, json_encode(['event' => 'report.devices',
+                    'data' => ['node_id' => $child, 'devices' => [42 => ["192.0.2.$child"]]]]));
+            }
+            $this->assertEquals(2, $user->fresh()->online_count);
+            $cache->put("node_ws_alive:$id", 'new-owner', 60);
+            $worker->onMessage($conn, json_encode(['event' => 'pong']));
+            $worker->onClose($conn);
+            $this->assertSame('new-owner', $cache->get("node_ws_alive:$id"));
+            $this->assertEquals(1, $user->fresh()->online_count);
+        } finally {
+            foreach ($ids as $child) {
+                NodeRegistry::remove($child, $conn);
+                $cache->forget("node_ws_alive:$child");
+            }
+            NodeRegistry::removeMachine($machine->id, $conn);
+            $cache->forget("machine_ws_owner:{$machine->id}");
+        }
+    }
 }

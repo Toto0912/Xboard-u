@@ -105,7 +105,7 @@ class ThemeController extends Controller
     {
         $data = [
             'themes' => $this->themeService->getList(),
-            'active' => admin_setting('frontend_theme', 'Xboard')
+            'active' => ThemeService::activeTheme()
         ];
         return $this->success($data);
     }
@@ -116,7 +116,7 @@ class ThemeController extends Controller
     public function switchTheme(Request $request)
     {
         $payload = $request->validate([
-            'name' => 'required'
+            'name' => 'required|string'
         ]);
         $this->themeService->switch($payload['name']);
         return $this->success(true);

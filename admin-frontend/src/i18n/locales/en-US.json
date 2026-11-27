@@ -1025,7 +1025,7 @@
     "banScope": "Ban Users",
     "scopes": {
       "selected": "Selected ({{count}})",
-      "filtered": "Current Filter",
+      "filtered": "Users matching these filters when the action runs",
       "all": "All Users"
     },
     "email": "Email",
@@ -1093,7 +1093,7 @@
     "mailContent": "Content",
     "mailSent": "Email queued successfully",
     "banTitle": "Ban Users",
-    "banConfirmDesc": "Are you sure you want to ban the target users?",
+    "banConfirmDesc": "Confirm ban for {{scope}}?",
     "resetTrafficDesc": "Reset used traffic for \"{{email}}\" to 0?"
   },
   "trafficReset": {

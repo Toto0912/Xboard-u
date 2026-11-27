@@ -26,6 +26,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: admin-frontend/package-lock.json
       - run: npm --prefix admin-frontend ci && npm --prefix admin-frontend run typecheck && npm --prefix admin-frontend run build:public
+      - name: Verify the source archive contains the current admin build
+        run: |
+          if ! git diff --quiet HEAD -- public/assets/admin || [ -n "$(git ls-files --others -- public/assets/admin)" ]; then
+            echo "::error::Rebuild the admin UI and commit the complete public/assets/admin directory."
+            exit 1
+          fi
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'

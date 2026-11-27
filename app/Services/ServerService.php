@@ -165,11 +165,16 @@ class ServerService
     public static function processTraffic(Server $node, array $traffic): void
     {
         $data = [];
+        $legacyHook = HookManager::hasHook('traffic.process.before') || HookManager::hasHook('traffic.before_process');
         foreach ($traffic as $id => $item) {
             if (!is_int($id) || $id <= 0 || $id > 2147483647 || !is_array($item)
                 || !array_is_list($item) || count($item) !== 2) continue;
             $bytes = [];
             foreach ($item as $value) {
+                if ($legacyHook && is_float($value) && is_finite($value) && $value >= 0 && $value < PHP_INT_MAX) {
+                    $bytes[] = $value;
+                    continue;
+                }
                 if (!is_int($value) && !(is_string($value) && ctype_digit($value))) continue 2;
                 $count = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
                 if ($count === false) continue 2;

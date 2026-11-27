@@ -29,7 +29,7 @@ Route::get('/', function (Request $request) {
         }
     }
 
-    $theme = admin_setting('frontend_theme', 'Xboard');
+    $theme = ThemeService::activeTheme();
     $themeService = new ThemeService();
 
     try {
@@ -37,12 +37,12 @@ Route::get('/', function (Request $request) {
             if ($theme !== 'Xboard') {
                 Log::warning('Theme not found, switching to default theme', ['theme' => $theme]);
                 $theme = 'Xboard';
-                admin_setting(['frontend_theme' => $theme]);
             }
             $themeService->switch($theme);
         }
 
-        if (!$themeService->getThemeViewPath($theme)) {
+        $viewPath = $themeService->getThemeViewPath($theme);
+        if (!$viewPath || !File::isFile($viewPath)) {
             throw new Exception('主题视图文件不存在');
         }
 
@@ -60,7 +60,7 @@ Route::get('/', function (Request $request) {
             'logo' => admin_setting('logo'),
             'theme_config' => $themeService->getConfig($theme)
         ];
-        return view('theme::' . $theme . '.dashboard', $renderParams);
+        return view()->file($viewPath, $renderParams);
     } catch (Exception $e) {
         Log::error('Theme rendering failed', [
             'theme' => $theme,

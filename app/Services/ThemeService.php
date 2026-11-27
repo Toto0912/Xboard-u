@@ -23,6 +23,11 @@ class ThemeService
         $this->registerThemeViewPaths();
     }
 
+    public static function activeTheme(): string
+    {
+        return admin_setting('frontend_theme') ?: (admin_setting('current_theme') ?: 'Xboard');
+    }
+
     /**
      * Register theme view paths
      */
@@ -92,7 +97,7 @@ class ThemeService
                     return [];
                 }
 
-                $config['can_delete'] = $canDelete && $name !== admin_setting('current_theme');
+                $config['can_delete'] = $canDelete && $name !== self::activeTheme();
                 $config['is_system'] = !$canDelete;
                 return [$name => $config];
             })->toArray();
@@ -189,7 +194,7 @@ class ThemeService
             return true;
         }
 
-        $currentTheme = admin_setting('current_theme');
+        $currentTheme = self::activeTheme();
 
         try {
             $themePath = $this->getThemePath($theme);
@@ -201,13 +206,11 @@ class ThemeService
                 throw new Exception('Theme view file not found');
             }
 
-            if ($currentTheme && $currentTheme !== $theme) {
+            $this->publish($theme);
+            admin_setting(['frontend_theme' => $theme, 'current_theme' => $theme]);
+            if ($currentTheme !== $theme) {
                 $this->cleanupThemeFiles($currentTheme);
             }
-
-            $this->publish($theme);
-
-            admin_setting(['current_theme' => $theme]);
             return true;
 
         } catch (Exception $e) {
@@ -232,7 +235,7 @@ class ThemeService
                 throw new Exception('System theme cannot be deleted');
             }
 
-            if ($theme === admin_setting('current_theme')) {
+            if ($theme === self::activeTheme()) {
                 throw new Exception('Current theme cannot be deleted');
             }
 
@@ -369,10 +372,7 @@ class ThemeService
     public function refreshCurrentTheme(): bool
     {
         try {
-            $currentTheme = admin_setting('current_theme') ?: admin_setting('frontend_theme', 'Xboard');
-            if (!$currentTheme) {
-                return false;
-            }
+            $currentTheme = self::activeTheme();
 
             $this->publish($currentTheme);
 

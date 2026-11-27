@@ -196,6 +196,32 @@ class UserController extends Controller
         ];
     }
 
+    private function resolveBulkWriteScope(Request $request): array
+    {
+        $request->validate([
+            'scope' => 'sometimes|required|in:selected,filtered,all',
+        ]);
+        $target = $this->resolveScope($request);
+        if ($target['scope'] === 'all' && !$request->has('scope') && $request->has('user_ids')) {
+            $target['scope'] = 'selected';
+        } elseif ($target['scope'] === 'all' && !$request->has('scope') && $request->has('filter')) {
+            $target['scope'] = 'filtered';
+        }
+        if ($target['scope'] === 'selected') {
+            $request->validate(['user_ids' => 'required|array|min:1', 'user_ids.*' => 'required|integer|min:1']);
+        } elseif ($target['scope'] === 'filtered') {
+            $request->validate(['filter' => 'required|array|min:1', 'filter.*' => 'required|array', 'filter.*.value' => 'required']);
+            foreach ($request->input('filter') as $filter) {
+                $value = $filter['value'];
+                if (is_string($value) && str_contains($value, ':') && !in_array($value, ['null:', 'notnull:'], true)
+                    && trim(explode(':', $value, 2)[1]) === '') {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['filter' => 'Empty filter value.']);
+                }
+            }
+        }
+        return $target;
+    }
+
     // Fetch paginated user list (filters + sorting).
     public function fetch(Request $request)
     {
@@ -280,7 +306,7 @@ class UserController extends Controller
     public function update(UserUpdate $request)
     {
         try {
-            if ($request->hasAny(['invite_user_email', 'expected_balance', 'expected_commission_balance'])) {
+            if ($request->hasAny(['password', 'invite_user_email', 'expected_balance', 'expected_commission_balance'])) {
                 return DB::transaction(fn () => $this->updateUser($request, true), 3);
             }
             return $this->updateUser($request);
@@ -357,7 +383,7 @@ class UserController extends Controller
         }
 
         $params = HookManager::filter('admin.user.update.params', $params, $request, $user);
-        if (!$lockUser && array_key_exists('invite_user_id', $params)) {
+        if (!$lockUser && (array_key_exists('invite_user_id', $params) || isset($params['password']))) {
             // A plugin can add an inviter to an otherwise ordinary edit.
             return DB::transaction(function () use ($user, $params, $request) {
                 $lockedUser = User::lockForUpdate()->findOrFail($user->id);
@@ -383,7 +409,14 @@ class UserController extends Controller
             'request' => $request,
         ]);
 
-        $user->update($params);
+        $user->fill($params);
+        $revokeSessions = $user->isDirty('password');
+        if (!$user->save()) {
+            throw new \RuntimeException('User update failed');
+        }
+        if ($revokeSessions) {
+            (new AuthService($user))->removeAllSessions();
+        }
 
         HookManager::call('admin.user.update.after', [
             'user' => $user->refresh(),
@@ -669,7 +702,7 @@ class UserController extends Controller
 
     public function sendMail(UserSendMail $request)
     {
-        $scopeInfo = $this->resolveScope($request);
+        $scopeInfo = $this->resolveBulkWriteScope($request);
         $scope = $scopeInfo['scope'];
         $userIds = $scopeInfo['user_ids'];
 
@@ -737,7 +770,7 @@ class UserController extends Controller
 
     public function ban(Request $request)
     {
-        $scopeInfo = $this->resolveScope($request);
+        $scopeInfo = $this->resolveBulkWriteScope($request);
         $scope = $scopeInfo['scope'];
         $userIds = $scopeInfo['user_ids'];
 

@@ -64,6 +64,7 @@ class TrafficBatchIngressTest extends TestCase
         $this->assertDatabaseCount('v2_traffic_batches', 1);
         $this->assertDatabaseCount('v2_traffic_batch_tasks', 5);
         $receipt = DB::table('v2_traffic_batches')->first();
+        $this->assertSame('client', $receipt->source);
         $this->assertEquals(0.5, $receipt->rate);
         $this->assertEquals(Carbon::parse('2026-11-26')->timestamp, $receipt->record_at);
         $this->assertEquals(1, $receipt->duplicate_count);
@@ -210,6 +211,16 @@ class TrafficBatchIngressTest extends TestCase
         $this->assertEquals(34, cache($key)['cpu']);
         $this->assertDatabaseHas('v2_traffic_batches', ['server_id' => $this->node->id, 'raw_u' => 11, 'raw_d' => 17]);
         $this->assertDatabaseCount('v2_traffic_batch_tasks', 4);
+    }
+
+    public function test_invalid_legacy_hook_metadata_is_rejected_without_starting_accounting(): void
+    {
+        HookManager::registerFilter('traffic.before_process', fn ($report) => [[], $report[1], $report[2]]);
+        $this->postJson('/api/v2/server/report', [
+            'node_id' => $this->node->id, 'token' => 'test-token', 'traffic' => [1 => [12, 5]],
+        ])->assertStatus(422);
+        $this->assertDatabaseCount('v2_traffic_batches', 0);
+        Bus::assertNotDispatched(TrafficFetchJob::class);
     }
 
     public function test_legacy_report_is_atomic_across_chunks_and_uses_the_original_plugin_contract(): void

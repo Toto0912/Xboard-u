@@ -56,7 +56,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { getPanelSettings } from '@/lib/settings';
-import { formatCurrency, formatTimestamp } from '@/lib/format';
+import { formatCurrency, formatTimestamp, parseCents } from '@/lib/format';
 
 const ORDER_STATUS_BADGE: Record<number, string> = {
   0: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30',
@@ -227,8 +227,8 @@ export default function OrderManagePage() {
     e.preventDefault();
     const email = assignEmail.trim();
     const pid = Number(assignPlanId);
-    const yuan = Number(assignAmountYuan);
-    if (!email || !pid || !assignAmountYuan.trim() || !Number.isFinite(yuan) || yuan < 0) {
+    const cents = parseCents(assignAmountYuan);
+    if (!email || !pid || cents === null || cents < 0) {
       toast.error(t('order.assignValidationError'));
       return;
     }
@@ -236,7 +236,7 @@ export default function OrderManagePage() {
       email,
       plan_id: pid,
       period: assignPeriod,
-      total_amount: Math.round(yuan * 100),
+      total_amount: cents,
     });
   };
 

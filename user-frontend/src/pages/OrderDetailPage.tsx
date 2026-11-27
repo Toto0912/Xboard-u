@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, CircleX, ExternalLink, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -29,10 +29,15 @@ import { formatCurrency, formatTimestamp } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export default function OrderDetailPage() {
+  const { trade_no } = useParams<{ trade_no: string }>();
+  return <OrderDetail key={trade_no} trade_no={trade_no!} />;
+}
+
+function OrderDetail({ trade_no }: { trade_no: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { trade_no } = useParams<{ trade_no: string }>();
+
 
   const [selectedMethod, setSelectedMethod] = useState<number | null>(null);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
@@ -58,6 +63,10 @@ export default function OrderDetailPage() {
 
   const symbol = commQuery.data?.currency_symbol || '¥';
   const order = detailQuery.data;
+  const checkoutSequence = useRef(0);
+  useLayoutEffect(() => {
+    return () => { checkoutSequence.current++; };
+  }, [order?.status]);
   const methods = methodsQuery.data ?? [];
 
   useEffect(() => {
@@ -77,8 +86,10 @@ export default function OrderDetailPage() {
         const status = await checkOrderStatus(trade_no);
         if (!active) return;
         if (status === 1) {
+          checkoutSequence.current++;
           void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
         } else if ([2, 3, 4].includes(status)) {
+          checkoutSequence.current++;
           setPolling(false);
           setQrUrl(null);
           setRedirectPayUrl(null);
@@ -111,12 +122,14 @@ export default function OrderDetailPage() {
   const displayedFee = order?.status === 0 ? estimatedFee : Number(order?.handling_amount ?? 0);
 
   const checkoutMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (_sequence: number) =>
       checkoutOrder({
         trade_no: trade_no!,
         method: order && order.total_amount > 0 ? selectedMethod ?? undefined : undefined,
       }),
-    onSuccess: (res) => {
+    onSuccess: (res, sequence) => {
+      if (sequence !== checkoutSequence.current ||
+          queryClient.getQueryData<{ status: number }>(['order-detail', trade_no])?.status !== 0) return;
       if (res.type === -1) {
         toast.success(t('order.paidSuccess'));
         void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
@@ -143,6 +156,8 @@ export default function OrderDetailPage() {
   const cancelMutation = useMutation({
     mutationFn: () => cancelOrder(trade_no!),
     onSuccess: () => {
+      checkoutSequence.current++;
+      queryClient.setQueryData<{ status: number }>(['order-detail', trade_no], current => current && { ...current, status: 2 });
       toast.success(t('order.cancelSuccess'));
       setCancelOpen(false);
       setPolling(false);
@@ -277,7 +292,7 @@ export default function OrderDetailPage() {
                   disabled={
                     checkoutMutation.isPending || (order.total_amount > 0 && selectedMethod === null)
                   }
-                  onClick={() => checkoutMutation.mutate()}
+                  onClick={() => checkoutMutation.mutate(++checkoutSequence.current)}
                 >
                   {checkoutMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                   {t('order.payNow')}
@@ -309,7 +324,7 @@ export default function OrderDetailPage() {
       )}
 
       <Dialog
-        open={Boolean(qrUrl)}
+        open={order?.status === 0 && Boolean(qrUrl)}
         onOpenChange={(o) => {
           if (!o) {
             setQrUrl(null);
