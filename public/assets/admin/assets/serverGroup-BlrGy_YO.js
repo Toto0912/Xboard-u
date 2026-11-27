@@ -1,1 +1,0 @@
-import{i as e}from"./index-BQwrEcZE.js";async function s(){return(await e("/server/group/fetch")).data||[]}async function t(r){return!!(await e("/server/group/save",{method:"POST",body:r})).data}async function n(r){return!!(await e("/server/group/drop",{method:"POST",body:{id:r}})).data}export{n as d,s as f,t as s};

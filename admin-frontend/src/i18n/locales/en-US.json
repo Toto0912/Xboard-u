@@ -741,6 +741,7 @@
     "routes": "Route Rules",
     "showInSubscribe": "Show in Subscription",
     "nodeEnabled": "Node Enabled",
+    "nodeEnabledHint": "Controls whether the bound server pulls and runs this node. When disabled, the server stops serving this node. Has no effect on standalone nodes.",
     "requiredFieldsError": "Name, host, port, and server port are required",
     "fixDraftErrorsFirst": "Please fix JSON syntax errors before saving",
     "jsonArrayRequired": "Must be a valid JSON array",

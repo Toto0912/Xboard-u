@@ -741,6 +741,7 @@
     "routes": "路由规则组",
     "showInSubscribe": "在订阅中显示",
     "nodeEnabled": "启用节点调度",
+    "nodeEnabledHint": "控制当前绑定的服务器是否拉取并运行此节点，关闭后服务器将停止节点服务。对独立部署的节点无效。",
     "requiredFieldsError": "请填写节点名称、地址、端口和服务端口",
     "fixDraftErrorsFirst": "请先修复表单中的 JSON 格式错误",
     "jsonArrayRequired": "必须输入 JSON 数组格式",

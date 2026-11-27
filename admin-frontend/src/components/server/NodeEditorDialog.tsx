@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeftRight,
   ChevronDown,
+  Info,
   Loader2,
   Plus,
   SlidersHorizontal,
@@ -46,6 +47,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   defaultProtocolSettings,
   inferTargetKernel,
@@ -807,7 +809,24 @@ export function NodeEditorDialog({
                       <Switch checked={show} onCheckedChange={setShow} />
                     </div>
                     <div className="flex items-center justify-between rounded-lg border bg-[var(--input-bg)] px-3.5 py-2.5">
-                      <Label className="text-xs">{t('serverNode.nodeEnabled')}</Label>
+                      <Tooltip delayDuration={150}>
+                        <TooltipTrigger asChild>
+                          <span
+                            tabIndex={0}
+                            className="inline-flex cursor-help items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <Label className="cursor-help text-xs">{t('serverNode.nodeEnabled')}</Label>
+                            <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          align="start"
+                          className="z-[60] max-w-xs border bg-popover px-3 py-2 text-xs leading-relaxed text-popover-foreground shadow-md"
+                        >
+                          {t('serverNode.nodeEnabledHint')}
+                        </TooltipContent>
+                      </Tooltip>
                       <Switch checked={enabled} onCheckedChange={setEnabled} />
                     </div>
                   </div>
