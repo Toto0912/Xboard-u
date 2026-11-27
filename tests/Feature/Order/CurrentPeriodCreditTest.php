@@ -159,7 +159,7 @@ class CurrentPeriodCreditTest extends TestCase
 
     public static function invalidTimeSources(): array
     {
-        return array_map(fn ($reason) => [$reason], ['discounted', 'cancelled', 'missing', 'owner', 'plan', 'user moved', 'plan deleted', 'empty ids']);
+        return array_map(fn ($reason) => [$reason], ['discounted', 'cancelled', 'missing', 'owner', 'plan', 'user moved', 'plan deleted', 'empty ids', 'invalid id']);
     }
 
     #[DataProvider('invalidTimeSources')]
@@ -181,6 +181,7 @@ class CurrentPeriodCreditTest extends TestCase
             'user moved' => $this->user->update(['plan_id' => Plan::create(['name' => 'Other', 'group_id' => 3, 'transfer_enable' => 1])->id]),
             'plan deleted' => $this->plan->delete(),
             'empty ids' => $upgrade->update(['surplus_order_ids' => []]),
+            'invalid id' => $upgrade->update(['surplus_order_ids' => [$first->id, $second->id . 'x']]),
         };
         $snapshot = fn () => [$upgrade->fresh()->getRawOriginal(), $this->user->fresh()->getRawOriginal(),
             $first->fresh()->getRawOriginal(), $second->fresh()?->getRawOriginal(), OrderPaymentAttempt::count()];
@@ -222,7 +223,8 @@ class CurrentPeriodCreditTest extends TestCase
         $this->travelTo($this->start->addSeconds(intdiv($this->user->expired_at - $this->start->timestamp, 2)));
         $this->user->update(['balance' => 400]);
         $this->target->update(['prices' => ['monthly' => 10]]);
-        $coupon = Coupon::create(['code' => 'TIME', 'name' => 'Time', 'type' => 1, 'value' => 100, 'show' => true, 'limit_use' => 1]);
+        $coupon = Coupon::create(['code' => 'TIME', 'name' => 'Time', 'type' => 1, 'value' => 100, 'show' => true,
+            'limit_use' => 1, 'started_at' => time() - 3600, 'ended_at' => time() + 3600]);
         $order = OrderService::createFromRequest($this->user, $this->target, 'monthly', $coupon->code)->fresh();
         $this->assertSame(0, (int) $order->total_amount);
         $this->assertSame(400, (int) $order->balance_amount);

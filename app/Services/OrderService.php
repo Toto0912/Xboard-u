@@ -375,7 +375,7 @@ class OrderService
                 }
             }
             if (!$basis || (int) ($basis['plan'] ?? 0) !== (int) $user->plan_id || !$ids || count($ids) !== $sources->count()
-                || ($timeOnly && !Plan::sharedLock()->find($user->plan_id, ['id']))) {
+                || ($timeOnly && (array_diff($ids, $sources->modelKeys()) || !Plan::sharedLock()->find($user->plan_id, ['id'])))) {
                 throw new ApiException(__('无法核对原套餐折抵依据，请先取消此订单，再重新下单。'));
             }
             if (!$timeOnly && $this->usageCredit($basis, $sources->sum(fn (Order $source) => $this->netOrderValue($source)), $user) < $order->surplus_amount) {

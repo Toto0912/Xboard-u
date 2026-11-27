@@ -87,6 +87,8 @@ function OrderDetail({ trade_no }: { trade_no: string }) {
       try {
         const status = await checkOrderStatus(trade_no);
         if (!active) return;
+        const currentStatus = queryClient.getQueryData<OrderItem>(['order-detail', trade_no])?.status;
+        if (currentStatus !== 0 && currentStatus !== 1) return;
         if (status === 1) {
           checkoutSequence.current++;
           void queryClient.invalidateQueries({ queryKey: ['order-detail', trade_no] });
