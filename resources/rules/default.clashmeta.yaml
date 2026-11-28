@@ -28,9 +28,9 @@ sniffer:
 # ================= 1. TUN 模式配置 =================
 tun:
   enable: true
-  mtu: 1420
+  mtu: 1480
   inet6-address: [2001:2::1/126]
-  stack: gvisor
+  stack: mips
   dns-mode: hijack
   dns-hijack:
     - 'any:53'

@@ -23,7 +23,7 @@
                 "198.18.0.1/30",
                 "2001:2::1/126"
             ],
-            "mtu": 1420,
+            "mtu": 1480,
             "dns_mode": "hijack",
             "auto_route": true,
             "strict_route": true,
@@ -277,14 +277,19 @@
             },
             {
                 "action": "route",
-                "clash_mode": "global",
-                "server": "Remote-DNS"
-            },
-            {
-                "action": "route",
-                "rule_set": [
-                    "GeoSite-CN",
-                    "GeoSite-Private"
+                "type": "logical",
+                "mode": "and",
+                "rules": [
+                    {
+                        "clash_mode": "global",
+                        "invert": true
+                    },
+                    {
+                        "rule_set": [
+                            "GeoSite-CN",
+                            "GeoSite-Private"
+                        ]
+                    }
                 ],
                 "server": "Local-DNS"
             },
@@ -316,6 +321,11 @@
                     }
                 ],
                 "server": "Fake-IP"
+            },
+            {
+                "action": "route",
+                "clash_mode": "global",
+                "server": "Remote-DNS"
             },
             {
                 "action": "route",
